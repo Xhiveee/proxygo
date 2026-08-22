@@ -20,11 +20,12 @@ mvn clean package
 
 ## Установка на сервер Minecraft (в Германии)
 
-1. Скопируй `target/proxygo-mc-agent.jar` на немецкий сервер в директорию сервера.
-2. Добавь агент в запуск:
+1. Скопируй `target/proxygo-mc-agent.jar` на немецкий сервер в директорию сервера
+   (рядом с `server.jar`).
+2. Запускай сервер, агент указывается просто именем jar:
 
 ```bash
-java -javaagent:/путь/к/серверу/proxygo-mc-agent.jar -jar server.jar nogui
+java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
 Логи пишутся в stdout с префиксом `[proxygo-agent]`:

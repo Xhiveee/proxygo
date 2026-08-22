@@ -158,11 +158,12 @@ mvn clean package
 ### Установка на каждый сервер в Германии
 
 1. Собери jar (локально или на РФ-VDS через `proxygo build`).
-2. Скопируй `target/proxygo-mc-agent.jar` на немецкий сервер, в директорию сервера.
-3. Добавь агент в запуск:
+2. Скопируй `proxygo-mc-agent.jar` на немецкий сервер, в директорию сервера
+   (рядом с `server.jar`).
+3. Запускай сервер, агент указывается просто именем jar:
 
 ```bash
-java -javaagent:/путь/к/своему/серверу/proxygo-mc-agent.jar -jar server.jar nogui
+java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
 Мониторинг в консоли: строки с префиксом `[proxygo-agent]`.
