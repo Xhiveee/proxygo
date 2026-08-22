@@ -340,6 +340,9 @@ func (b *Backend) handleConn(conn net.Conn) {
 	b.tracker.inc(clientIP)
 	b.trackConn(conn)
 	b.trackConn(backend)
+	b.log.Info("client connected",
+		"backend", b.Name(), "client", clientIP, "target", b.model.BackendTCP,
+		"active", b.active.Load())
 
 	cw := newCountConn(conn, &b.tcpOut, b.cfg.Proxy.DefaultIdle)
 	bw := newCountConn(backend, &b.tcpIn, b.cfg.Proxy.DefaultIdle)
@@ -356,6 +359,7 @@ func (b *Backend) handleConn(conn net.Conn) {
 			b.untrackConn(backend)
 			b.tracker.dec(clientIP)
 			b.active.Add(-1)
+			b.log.Info("client disconnected", "backend", b.Name(), "client", clientIP)
 		})
 	}
 
