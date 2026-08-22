@@ -169,8 +169,12 @@ make_config() {
         ask "${B}Telegram bot token${R} (Enter — пропустить, потом впишешь вручную): " TOKEN || true
     fi
     if [ -z "$ADMINS" ]; then
-        ask "${B}Telegram admin user IDs${R}, через запятую: " ADMINS || true
+        ask "${B}Telegram admin user IDs${R}, через запятую (например 8622549424 или 8622549424,7777777777): " ADMINS || true
     fi
+    # нормализуем: убираем пробелы и хвостовую запятую
+    TOKEN="$(printf '%s' "$TOKEN" | xargs 2>/dev/null || printf '%s' "$TOKEN")"
+    ADMINS="$(printf '%s' "$ADMINS" | xargs 2>/dev/null || printf '%s' "$ADMINS")"
+    ADMINS="${ADMINS%,}"
 
     if [ -n "$TOKEN" ]; then
         sed -i -E "s#^  bot_token:.*#  bot_token: \"$TOKEN\"#" "$cfg"
