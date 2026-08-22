@@ -81,7 +81,7 @@ func (b *Bot) Start(ctx context.Context) error {
 				Proxy: http.ProxyURL(proxyURL),
 			},
 		}
-		api, err = tgbotapi.NewBotAPIWithClient(token, "https://api.telegram.org/bot", client)
+		api, err = tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, client)
 	} else {
 		api, err = tgbotapi.NewBotAPI(token)
 	}
