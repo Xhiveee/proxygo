@@ -146,19 +146,30 @@ build_sources() {
     fi
 }
 
+# ask reads a value from the controlling terminal (/dev/tty) so the prompt also
+# works when the script is piped in (curl ... | sudo bash). Returns 1 if no tty.
+ask() {
+    local prompt="$1" var="$2" val=""
+    if [ -e /dev/tty ] && [ -r /dev/tty ]; then
+        printf '%s' "$prompt" > /dev/tty 2>/dev/null || true
+        IFS= read -r val < /dev/tty || true
+        printf -v "$var" '%s' "$val"
+        return 0
+    fi
+    return 1
+}
+
 make_config() {
     local cfg="$INSTALL_DIR/config.yaml"
     [ -f "$cfg" ] && { log "config.yaml exists -> leaving it"; return; }
     cp "$INSTALL_DIR/config.example.yaml" "$cfg"
 
     local TOKEN="${TELEGRAM_TOKEN:-}" ADMINS="${TELEGRAM_ADMINS:-}"
-    if [ -z "$TOKEN" ] && [ -t 0 ]; then
-        printf "${B}Telegram bot token${R} (${YEL}Enter to skip -> manual config${R}): "
-        IFS= read -r TOKEN || true
+    if [ -z "$TOKEN" ]; then
+        ask "${B}Telegram bot token${R} (Enter — пропустить, потом впишешь вручную): " TOKEN || true
     fi
-    if [ -z "$ADMINS" ] && [ -t 0 ]; then
-        printf "${B}Telegram admin user IDs${R}, comma separated (Enter to skip): "
-        IFS= read -r ADMINS || true
+    if [ -z "$ADMINS" ]; then
+        ask "${B}Telegram admin user IDs${R}, через запятую: " ADMINS || true
     fi
 
     if [ -n "$TOKEN" ]; then
