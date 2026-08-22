@@ -333,6 +333,8 @@ func (b *Backend) handleConn(conn net.Conn) {
 		backend.Close()
 		return
 	}
+	b.log.Info("ppv2 header sent", "backend", b.Name(), "client", clientIP,
+		"target", b.model.BackendTCP, "hdr_len", len(hdrBytes))
 
 	b.active.Add(1)
 	b.connTotal.Add(1)
