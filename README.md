@@ -23,15 +23,14 @@
 
 ## Установка на сервер (curl)
 
-Одной командой на свежем Linux VDS (ставятся последний Docker, Go, JDK и Maven
-**локально внутри проекта**, компилируются бинарь и Java-агент):
+Одной командой на свежем Linux VDS (ставятся Go, JDK и Maven **локально внутри
+проекта**, компилируются бинарь и Java-агент; сервис работает через **systemd**):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Xhiveee/proxygo/main/deploy/proxygo-deploy.sh | sudo bash
 ```
 
 Скрипт сам:
-* ставит последний **Docker**, если его нет (пропустить: `PROXYGO_NO_DOCKER=1`);
 * клонирует проект в **`/opt/proxygo`**;
 * ставит Go/JDK/Maven в `/opt/proxygo/.tool` (только внутри проекта, не глобально);
 * собирает бинарь `/opt/proxygo/bin/proxygo` и агент `/opt/proxygo/proxygo-mc-agent/target/proxygo-mc-agent.jar`;
@@ -39,8 +38,10 @@ curl -fsSL https://raw.githubusercontent.com/Xhiveee/proxygo/main/deploy/proxygo
   (`telegram.disabled: true`) и токен вписывается вручную в конфиг;
 * ставит systemd-юнит `proxygo.service` и CLI `proxygo`, запускает сервис.
 
-> Для SSH-клона: `PROXYGO_REPO=git@github.com:Xhiveee/proxygo.git`. Для docker без
-> iptables: `PROXYGO_NO_DOCKER=1`.
+> **Docker не используется** — proxygo работает нативно через systemd. `Dockerfile`
+> оставлен только как опциональный контейнерный вариант для тех, кто хочет.
+
+> Для SSH-клона: `PROXYGO_REPO=git@github.com:Xhiveee/proxygo.git`.
 
 ## Быстрый старт (Go Proxy)
 
@@ -91,7 +92,10 @@ proxygo remove [-y]                          # удалить (стоп + уда
 
 Управление: `proxygo start | stop | restart | status | logs | remove`.
 
-### Docker
+### Docker (опционально, не используется деплоем)
+
+Основной деплой — через systemd. Docker здесь только как альтернатива для запуска
+в контейнере:
 
 ```bash
 docker build -t proxygo .
@@ -102,6 +106,7 @@ docker run -d --name proxygo --cap-add=NET_ADMIN \
 ```
 
 > `--cap-add=NET_ADMIN` нужен только если `security.enforce_iptables: true`.
+> Скрипт `proxygo-deploy.sh` Docker **не ставит и не использует**.
 
 ## Telegram-команды
 

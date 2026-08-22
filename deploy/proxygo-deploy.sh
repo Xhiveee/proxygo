@@ -7,19 +7,21 @@
 #   curl -fsSL https://raw.githubusercontent.com/Xhiveee/proxygo/main/deploy/proxygo-deploy.sh | sudo bash
 #
 # What it does:
-#   * installs the latest Docker if docker is not present (skip with PROXYGO_NO_DOCKER=1)
 #   * clones the project into /opt/proxygo
 #   * installs Go, a JDK and Maven *locally inside the project* (/opt/proxygo/.tool)
 #     so nothing is installed system-wide for compilation
 #   * compiles the Go proxy -> /opt/proxygo/bin/proxygo
-#   * compiles the Java agent  -> /opt/proxygo/bin/proxygo-mc-agent.jar
+#   * compiles the Java agent  -> /opt/proxygo/proxygo-mc-agent/target/proxygo-mc-agent.jar
 #   * asks for the Telegram bot token / admin IDs (skippable -> manual config)
 #   * installs a systemd unit + the 'proxygo' management CLI and (re)starts it
+#
+# NOTE: proxygo runs natively under systemd (binary + unit). Docker is NOT
+# installed or used by this script; a Dockerfile is provided only as an
+# optional, alternative deployment path.
 #
 # Override via env:
 #   PROXYGO_REPO        repo to clone (default the HTTPS URL; use git@ for SSH)
 #   PROXYGO_BRANCH      branch (default main)
-#   PROXYGO_NO_DOCKER=1 skip Docker install
 #   PROXYGO_GO_VERSION  Go version override
 #   PROXYGO_JDK_VERSION JDK version override (default 21)
 #   PROXYGO_MAVEN_VERSION Maven version override (default 3.9.9)
@@ -71,22 +73,7 @@ ensure_basics() {
     ok "system basics ok"
 }
 
-ensure_docker() {
-    if command -v docker >/dev/null 2>&1; then
-        ok "docker already installed: $(docker --version 2>/dev/null | tr -d '\n')"
-        return
-    fi
-    if [ "${PROXYGO_NO_DOCKER:-0}" = "1" ]; then
-        info "PROXYGO_NO_DOCKER=1 -> skipping Docker install"
-        return
-    fi
-    info "installing the latest Docker ..."
-    curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || \
-        die "failed to install Docker (enabled via PROXYGO_NO_DOCKER=1 to skip)"
-    command -v docker >/dev/null 2>&1 || die "docker still not found"
-    if have_systemd; then systemctl enable docker >/dev/null 2>&1 || true; fi
-    ok "docker installed: $(docker --version 2>/dev/null | tr -d '\n')"
-}
+# proxygo runs natively under systemd; no Docker is needed.
 
 ensure_source() {
     if [ -d "$INSTALL_DIR/.git" ]; then
@@ -207,8 +194,6 @@ install_assets() {
 }
 
 summary() {
-    local docker_state="not installed"
-    command -v docker >/dev/null 2>&1 && docker_state="$(docker --version 2>/dev/null | tr -d '\n')"
     cat <<EOF
 
 ${GRN}============================================================${R}
@@ -221,7 +206,7 @@ ${GRN}============================================================${R}
   Данные (SQLite)        : ${B}$INSTALL_DIR/data/proxygo.db${R}
   Логи                   : ${B}$INSTALL_DIR/log/${R}
   Локальные тулчейны     : ${B}$TOOL/{go,jdk,maven}${R}
-  Docker                 : ${B}$docker_state${R}
+  Docker                 : не используется — сервис работает через systemd
   systemd юнит           : ${B}proxygo.service${R}
 
 ${B}  Как пользоваться (единый CLI: /usr/local/bin/proxygo)${R}
@@ -263,7 +248,6 @@ EOF
 need_root
 detect_arch
 ensure_basics
-ensure_docker
 ensure_source
 install_go
 install_maven
