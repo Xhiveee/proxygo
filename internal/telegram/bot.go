@@ -166,7 +166,7 @@ func (b *Bot) handleUpdate(upd tgbotapi.Update) {
 		return
 	}
 	if !b.limiter.Allow(strconv.FormatInt(uid, 10)) {
-		b.reply(msg, "вЏі <b>Rate limit</b>. РџРѕРґРѕР¶РґРё РЅРµРјРЅРѕРіРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.")
+		b.reply(msg, "⏳ <b>Rate limit</b>. Подожди немного и попробуй снова.")
 		return
 	}
 	b.dispatch(msg)
@@ -205,7 +205,7 @@ func (b *Bot) dispatch(msg *tgbotapi.Message) {
 	case "/log":
 		b.cmdLog(msg, args)
 	default:
-		b.send(msg, "РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР°. /start вЂ” СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ.")
+		b.send(msg, "Неизвестная команда. /start — список команд.")
 	}
 }
 
@@ -214,21 +214,21 @@ func (b *Bot) dispatch(msg *tgbotapi.Message) {
 func (b *Bot) cmdList(msg *tgbotapi.Message) {
 	list := b.mgr.List()
 	if len(list) == 0 {
-		b.send(msg, "Р‘СЌРєРµРЅРґРѕРІ РЅРµС‚. ` /add <name> <port> <tcp> [udp] `")
+		b.send(msg, "Бэкендов нет. ` /add <name> <port> <tcp> [udp] `")
 		return
 	}
 	var sb strings.Builder
-	sb.WriteString("рџ“¦ <b>Р‘СЌРєРµРЅРґС‹</b>\n")
-	sb.WriteString("<code>ID  Name     TCP:в†’backend              UDP       Conns  Up     Tx</code>\n")
+	sb.WriteString("📦 <b>Бэкенды</b>\n")
+	sb.WriteString("<code>ID  Name     TCP:→backend              UDP       Conns  Up     Tx</code>\n")
 	for _, bk := range list {
 		m := bk.Model()
-		udp := "вЂ”"
+		udp := "—"
 		if m.UDPEnabled {
-			udp = fmt.Sprintf("%dв†’%s", m.UDPPort, m.BackendUDP)
+			udp = fmt.Sprintf("%d→%s", m.UDPPort, m.BackendUDP)
 		}
 		sb.WriteString(fmt.Sprintf(
 			"<code>%-3d %-8s %-24s %-14s %-5d %-7s %-8s</code>\n",
-			m.ID, m.Name, fmt.Sprintf("%dв†’%s", m.ListenPort, m.BackendTCP), udp,
+			m.ID, m.Name, fmt.Sprintf("%d→%s", m.ListenPort, m.BackendTCP), udp,
 			bk.ActiveConns(), shortUptime(time.Since(bk.StartedAt())), humanBytes(bkStatsTx(bk)),
 		))
 	}
@@ -237,13 +237,13 @@ func (b *Bot) cmdList(msg *tgbotapi.Message) {
 
 func (b *Bot) cmdAdd(msg *tgbotapi.Message, args []string) {
 	if len(args) < 3 || len(args) > 4 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/add &lt;name&gt; &lt;port&gt; &lt;tcp&gt; [udp]</code>")
+		b.send(msg, "Формат: <code>/add &lt;name&gt; &lt;port&gt; &lt;tcp&gt; [udp]</code>")
 		return
 	}
 	name := args[0]
 	port, err := strconv.Atoi(args[1])
 	if err != nil {
-		b.send(msg, "РџРѕСЂС‚ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‡РёСЃР»РѕРј.")
+		b.send(msg, "Порт должен быть числом.")
 		return
 	}
 	backendTCP := args[2]
@@ -257,27 +257,27 @@ func (b *Bot) cmdAdd(msg *tgbotapi.Message, args []string) {
 	}
 	bk, err := b.mgr.Add(name, port, backendTCP, backendUDP, udpPort)
 	if err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/add", name)
-	b.send(msg, "вњ… Р‘СЌРєРµРЅРґ РґРѕР±Р°РІР»РµРЅ: <b>"+bk.Name()+"</b>\nTCP "+bk.Model().BackendTCP)
+	b.send(msg, "✅ Бэкенд добавлен: <b>"+bk.Name()+"</b>\nTCP "+bk.Model().BackendTCP)
 }
 
 func (b *Bot) cmdRemove(msg *tgbotapi.Message, args []string) {
 	if len(args) != 1 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/remove &lt;name|id&gt;</code>")
+		b.send(msg, "Формат: <code>/remove &lt;name|id&gt;</code>")
 		return
 	}
 	ref := args[0]
 	// confirm via inline button
 	kb := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("вљ пёЏ РЈРґР°Р»РёС‚СЊ", "del:"+ref),
-			tgbotapi.NewInlineKeyboardButtonData("РћС‚РјРµРЅР°", "cancel"),
+			tgbotapi.NewInlineKeyboardButtonData("⚠️ Удалить", "del:"+ref),
+			tgbotapi.NewInlineKeyboardButtonData("Отмена", "cancel"),
 		),
 	)
-	m := tgbotapi.NewMessage(msg.Chat.ID, "РЈРґР°Р»РёС‚СЊ Р±СЌРєРµРЅРґ <b>"+ref+"</b>?")
+	m := tgbotapi.NewMessage(msg.Chat.ID, "Удалить бэкенд <b>"+ref+"</b>?")
 	m.ParseMode = "HTML"
 	m.ReplyMarkup = kb
 	_, _ = b.api.Send(m)
@@ -285,49 +285,49 @@ func (b *Bot) cmdRemove(msg *tgbotapi.Message, args []string) {
 
 func (b *Bot) cmdRestart(msg *tgbotapi.Message, args []string) {
 	if len(args) != 1 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/restart &lt;name&gt;</code>")
+		b.send(msg, "Формат: <code>/restart &lt;name&gt;</code>")
 		return
 	}
 	if err := b.mgr.Restart(args[0]); err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/restart", args[0])
-	b.send(msg, "рџ”„ Р‘СЌРєРµРЅРґ <b>"+args[0]+"</b> РїРµСЂРµСЃРѕР·РґР°РЅ.")
+	b.send(msg, "🔄 Бэкенд <b>"+args[0]+"</b> пересоздан.")
 }
 
 func (b *Bot) cmdAddUDP(msg *tgbotapi.Message, args []string) {
 	if len(args) != 2 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/add-udp &lt;name&gt; &lt;udp&gt;</code>")
+		b.send(msg, "Формат: <code>/add-udp &lt;name&gt; &lt;udp&gt;</code>")
 		return
 	}
 	udpPort := findPortFrom(args[1])
 	if err := b.mgr.AddUDP(args[0], args[1], udpPort); err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/add-udp", args[0])
-	b.send(msg, "вњ… UDP РїРѕРґРєР»СЋС‡РµРЅ Рє <b>"+args[0]+"</b> ("+args[1]+")")
+	b.send(msg, "✅ UDP подключен к <b>"+args[0]+"</b> ("+args[1]+")")
 }
 
 func (b *Bot) cmdRemoveUDP(msg *tgbotapi.Message, args []string) {
 	if len(args) != 1 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/remove-udp &lt;name&gt;</code>")
+		b.send(msg, "Формат: <code>/remove-udp &lt;name&gt;</code>")
 		return
 	}
 	if err := b.mgr.RemoveUDP(args[0]); err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/remove-udp", args[0])
-	b.send(msg, "вњ… UDP РѕС‚РєР»СЋС‡РµРЅ Сѓ <b>"+args[0]+"</b>")
+	b.send(msg, "✅ UDP отключен у <b>"+args[0]+"</b>")
 }
 
 func (b *Bot) cmdStats(msg *tgbotapi.Message, args []string) {
 	if len(args) == 1 {
 		bk, ok := b.mgr.Get(args[0])
 		if !ok {
-			b.send(msg, "Р‘СЌРєРµРЅРґ РЅРµ РЅР°Р№РґРµРЅ.")
+			b.send(msg, "Бэкенд не найден.")
 			return
 		}
 		b.send(msg, b.formatBackendStats(bk))
@@ -335,7 +335,7 @@ func (b *Bot) cmdStats(msg *tgbotapi.Message, args []string) {
 	}
 	kb := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("рџ”„ РћР±РЅРѕРІРёС‚СЊ", "refresh:all"),
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Обновить", "refresh:all"),
 		),
 	)
 	m := tgbotapi.NewMessage(msg.Chat.ID, b.formatGlobalStats())
@@ -346,39 +346,39 @@ func (b *Bot) cmdStats(msg *tgbotapi.Message, args []string) {
 
 func (b *Bot) cmdBan(msg *tgbotapi.Message, args []string) {
 	if len(args) < 1 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/ban &lt;ip&gt; [РїСЂРёС‡РёРЅР°]</code>")
+		b.send(msg, "Формат: <code>/ban &lt;ip&gt; [причина]</code>")
 		return
 	}
 	ip := args[0]
 	reason := strings.Join(args[1:], " ")
 	if err := b.bans.Ban(ip, reason, strconv.FormatInt(msg.From.ID, 10)); err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/ban", ip+" "+reason)
-	b.send(msg, "рџ”Ё IP <b>"+ip+"</b> Р·Р°Р±Р°РЅРµРЅ: "+reason)
+	b.send(msg, "🔨 IP <b>"+ip+"</b> забанен: "+reason)
 }
 
 func (b *Bot) cmdUnban(msg *tgbotapi.Message, args []string) {
 	if len(args) != 1 {
-		b.send(msg, "Р¤РѕСЂРјР°С‚: <code>/unban &lt;ip&gt;</code>")
+		b.send(msg, "Формат: <code>/unban &lt;ip&gt;</code>")
 		return
 	}
 	if err := b.bans.Unban(args[0]); err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/unban", args[0])
-	b.send(msg, "вњ… IP <b>"+args[0]+"</b> СЂР°Р·Р±Р°РЅРµРЅ.")
+	b.send(msg, "✅ IP <b>"+args[0]+"</b> разбанен.")
 }
 
 func (b *Bot) cmdBans(msg *tgbotapi.Message) {
 	list, err := b.bans.List()
 	if err != nil {
-		b.send(msg, "вќЊ "+err.Error())
+		b.send(msg, "❌ "+err.Error())
 		return
 	}
-	b.send(msg, "рџ”’ <b>Р‘Р°РЅС‹</b>\n"+security.Describe(list, 30))
+	b.send(msg, "🔒 <b>Баны</b>\n"+security.Describe(list, 30))
 }
 
 func (b *Bot) cmdLog(msg *tgbotapi.Message, args []string) {
@@ -392,7 +392,7 @@ func (b *Bot) cmdLog(msg *tgbotapi.Message, args []string) {
 		lines := tailFile(cfg.File, n)
 		b.send(msg, "<pre>"+escapeHtml(lines)+"</pre>")
 	} else {
-		b.send(msg, "Р›РѕРі С„Р°Р№Р» РЅРµ РЅР°СЃС‚СЂРѕРµРЅ.")
+		b.send(msg, "Лог файл не настроен.")
 	}
 }
 
@@ -400,16 +400,16 @@ func (b *Bot) cmdLog(msg *tgbotapi.Message, args []string) {
 
 func (b *Bot) formatGlobalStats() string {
 	var sb strings.Builder
-	sb.WriteString("рџ“€ <b>РћР±С‰Р°СЏ СЃС‚Р°С‚РёСЃС‚РёРєР°</b>\n")
+	sb.WriteString("📈 <b>Общая статистика</b>\n")
 	totalTCP, totalUDP := int64(0), int64(0)
 	for _, bk := range b.mgr.List() {
 		in, out, udp, _, _ := bk.Stats()
 		totalTCP += in + out
 		totalUDP += udp
 	}
-	sb.WriteString(fmt.Sprintf("вЂў <b>TCP</b> РІСЃРµРіРѕ: %s\n", humanBytes(totalTCP)))
-	sb.WriteString(fmt.Sprintf("вЂў <b>UDP</b> РІСЃРµРіРѕ: %s\n", humanBytes(totalUDP)))
-	sb.WriteString("\nрџЏ† <b>РўРѕРї-5 Р±СЌРєРµРЅРґРѕРІ РїРѕ С‚СЂР°С„РёРєСѓ</b>\n")
+	sb.WriteString(fmt.Sprintf("• <b>TCP</b> всего: %s\n", humanBytes(totalTCP)))
+	sb.WriteString(fmt.Sprintf("• <b>UDP</b> всего: %s\n", humanBytes(totalUDP)))
+	sb.WriteString("\n🏆 <b>Топ-5 бэкендов по трафику</b>\n")
 	type row struct {
 		name string
 		v    int64
@@ -421,7 +421,7 @@ func (b *Bot) formatGlobalStats() string {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].v > rows[j].v })
 	for i := 0; i < len(rows) && i < 5; i++ {
-		sb.WriteString(fmt.Sprintf("%d. <b>%s</b> вЂ” %s\n", i+1, rows[i].name, humanBytes(rows[i].v)))
+		sb.WriteString(fmt.Sprintf("%d. <b>%s</b> — %s\n", i+1, rows[i].name, humanBytes(rows[i].v)))
 	}
 	return sb.String()
 }
@@ -430,18 +430,18 @@ func (b *Bot) formatBackendStats(bk *proxy.Backend) string {
 	m := bk.Model()
 	in, out, udp, pkts, conns := bk.Stats()
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("рџ“Љ <b>%s</b> (#%d)\n", m.Name, m.ID))
-	sb.WriteString(fmt.Sprintf("TCP: <code>%d в†’ %s</code> (%s)\n", m.ListenPort, m.BackendTCP, enabledStr(m.Enabled)))
-	udpLine := "вЂ”"
+	sb.WriteString(fmt.Sprintf("📊 <b>%s</b> (#%d)\n", m.Name, m.ID))
+	sb.WriteString(fmt.Sprintf("TCP: <code>%d → %s</code> (%s)\n", m.ListenPort, m.BackendTCP, enabledStr(m.Enabled)))
+	udpLine := "—"
 	if m.UDPEnabled {
-		udpLine = fmt.Sprintf("<code>%d в†’ %s</code>", m.UDPPort, m.BackendUDP)
+		udpLine = fmt.Sprintf("<code>%d → %s</code>", m.UDPPort, m.BackendUDP)
 	}
 	sb.WriteString("UDP: " + udpLine + "\n")
-	sb.WriteString(fmt.Sprintf("РђРєС‚РёРІРЅС‹С… TCP: %d\n", bk.ActiveConns()))
-	sb.WriteString(fmt.Sprintf("РЎРѕРµРґРёРЅРµРЅРёР№ РІСЃРµРіРѕ: %d\n", conns))
-	sb.WriteString(fmt.Sprintf("TCP в†‘ %s / в†“ %s\n", humanBytes(out), humanBytes(in)))
-	sb.WriteString(fmt.Sprintf("UDP в†‘ %s (%d РїР°РєРµС‚РѕРІ)\n", humanBytes(udp), pkts))
-	sb.WriteString(fmt.Sprintf("РђРїС‚Р°Р№Рј: %s", shortUptime(time.Since(bk.StartedAt()))))
+	sb.WriteString(fmt.Sprintf("Активных TCP: %d\n", bk.ActiveConns()))
+	sb.WriteString(fmt.Sprintf("Соединений всего: %d\n", conns))
+	sb.WriteString(fmt.Sprintf("TCP ↑ %s / ↓ %s\n", humanBytes(out), humanBytes(in)))
+	sb.WriteString(fmt.Sprintf("UDP ↑ %s (%d пакетов)\n", humanBytes(udp), pkts))
+	sb.WriteString(fmt.Sprintf("Аптайм: %s", shortUptime(time.Since(bk.StartedAt()))))
 	return sb.String()
 }
 
@@ -450,7 +450,7 @@ func (b *Bot) formatBackendStats(bk *proxy.Backend) string {
 func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	uid := q.From.ID
 	if !b.cfg.AdminAllowed(uid) {
-		b.answer(q, "С‚РѕР»СЊРєРѕ РґР»СЏ Р°РґРјРёРЅРѕРІ")
+		b.answer(q, "только для админов")
 		return
 	}
 	if !b.limiter.Allow(strconv.FormatInt(uid, 10)) {
@@ -461,16 +461,16 @@ func (b *Bot) handleCallback(q *tgbotapi.CallbackQuery) {
 	chatID := q.Message.Chat.ID
 	switch {
 	case data == "cancel":
-		b.answer(q, "РѕС‚РјРµРЅРµРЅРѕ")
+		b.answer(q, "отменено")
 	case strings.HasPrefix(data, "del:"):
 		ref := strings.TrimPrefix(data, "del:")
 		if err := b.mgr.Remove(ref); err != nil {
-			b.answer(q, "РѕС€РёР±РєР°: "+err.Error())
+			b.answer(q, "ошибка: "+err.Error())
 			return
 		}
 		_ = b.store.RecordAudit(uid, "/remove", ref)
-		b.editText(chatID, q.Message.MessageID, "рџ—‘ Р‘СЌРєРµРЅРґ <b>"+ref+"</b> СѓРґР°Р»С‘РЅ.")
-		b.answer(q, "СѓРґР°Р»РµРЅРѕ")
+		b.editText(chatID, q.Message.MessageID, "🗑 Бэкенд <b>"+ref+"</b> удалён.")
+		b.answer(q, "удалено")
 	case strings.HasPrefix(data, "refresh:"):
 		target := strings.TrimPrefix(data, "refresh:")
 		if target == "all" {
@@ -511,22 +511,22 @@ func (b *Bot) answer(q *tgbotapi.CallbackQuery, text string) {
 
 const helpText = `<b>MC Hybrid Proxy Bot</b>
 
-<b>РЈРїСЂР°РІР»РµРЅРёРµ</b>
-/list вЂ” С‚Р°Р±Р»РёС†Р° Р±СЌРєРµРЅРґРѕРІ
-/add <b>name port tcp</b> [udp] вЂ” РґРѕР±Р°РІРёС‚СЊ
-/add-udp <b>name udp</b> вЂ” РґРѕР±Р°РІРёС‚СЊ UDP
-/remove-udp <b>name</b> вЂ” РѕС‚РєР»СЋС‡РёС‚СЊ UDP
-/restart <b>name</b> вЂ” РїРµСЂРµСЃРѕР·РґР°С‚СЊ listener
-/remove <b>name|id</b> вЂ” СѓРґР°Р»РёС‚СЊ
+<b>Управление</b>
+/list — таблица бэкендов
+/add <b>name port tcp</b> [udp] — добавить
+/add-udp <b>name udp</b> — добавить UDP
+/remove-udp <b>name</b> — отключить UDP
+/restart <b>name</b> — пересоздать listener
+/remove <b>name|id</b> — удалить
 
-<b>РЎС‚Р°С‚РёСЃС‚РёРєР°</b>
-/stats вЂ” РѕР±С‰Р°СЏ
-/stats <b>name</b> вЂ” РїРѕ Р±СЌРєРµРЅРґСѓ
+<b>Статистика</b>
+/stats — общая
+/stats <b>name</b> — по бэкенду
 
-<b>Р‘РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ</b>
+<b>Безопасность</b>
 /ban <b>ip</b> [reason]
 /unban <b>ip</b>
 /bans
 
-<b>РџСЂРѕС‡РµРµ</b>
-/log <b>N</b> вЂ” РїРѕСЃР»РµРґРЅРёРµ N СЃС‚СЂРѕРє Р»РѕРіР°`
+<b>Прочее</b>
+/log <b>N</b> — последние N строк лога`

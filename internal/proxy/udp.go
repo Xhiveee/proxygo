@@ -227,7 +227,7 @@ func (u *UDPForwarder) notifyDDoS(ip string) {
 	if u.lastDDoS.CompareAndSwap(last, now) {
 		u.ms.ErrRateLimit.Add(1)
 		u.log.Warn("ddos suspicion", "backend", u.model.Name, "ip", ip, "proto", "udp")
-		u.notify.Notify("рџ”Ґ DDoS detect: " + ip + " (proto=udp) on " + u.model.Name)
+		u.notify.Notify("🔥 DDoS detect: " + ip + " (proto=udp) on " + u.model.Name)
 	}
 }
 

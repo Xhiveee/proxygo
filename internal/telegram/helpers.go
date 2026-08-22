@@ -70,12 +70,12 @@ func tailFile(path string, n int) string {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return "РЅРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ Р»РѕРі: " + err.Error()
+		return "не удалось открыть лог: " + err.Error()
 	}
 	defer f.Close()
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return "РЅРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ Р»РѕРі: " + err.Error()
+		return "не удалось прочитать лог: " + err.Error()
 	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	if len(lines) > n {
@@ -87,9 +87,9 @@ func tailFile(path string, n int) string {
 // enabledStr is a tiny helper for state display.
 func enabledStr(e bool) string {
 	if e {
-		return "РІРєР»"
+		return "вкл"
 	}
-	return "РІС‹РєР»"
+	return "выкл"
 }
 
 var _ = sort.Slice

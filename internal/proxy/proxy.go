@@ -309,7 +309,7 @@ func (b *Backend) handleConn(conn net.Conn) {
 	if err != nil {
 		b.metrics.ErrDial.Add(1)
 		if n := b.dialFail.Add(1); n == cfgDialAlertThreshold {
-			b.notify.Notify("вљ пёЏ backend dial failed x3: " + b.Name() + " -> " + b.model.BackendTCP)
+			b.notify.Notify("⚠️ backend dial failed x3: " + b.Name() + " -> " + b.model.BackendTCP)
 		}
 		b.log.Warn("dial backend failed", "backend", b.Name(), "client", clientIP, "err", err)
 		conn.Close()
@@ -403,7 +403,7 @@ func (b *Backend) notifyDDoS(ip, proto string) {
 	if b.lastDDOS.CompareAndSwap(last, now) {
 		b.metrics.ErrRateLimit.Add(1)
 		b.log.Warn("ddos suspicion", "backend", b.Name(), "ip", ip, "proto", proto)
-		b.notify.Notify("рџ”Ґ DDoS detect: " + ip + " (proto=" + proto + ") on " + b.Name())
+		b.notify.Notify("🔥 DDoS detect: " + ip + " (proto=" + proto + ") on " + b.Name())
 	}
 }
 

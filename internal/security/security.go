@@ -102,14 +102,14 @@ func (b *Bans) iptables(op, ip string) {
 // Describe returns a human readable ban summary.
 func Describe(bs []*model.Ban, max int) string {
 	if len(bs) == 0 {
-		return "РќРµС‚ Р±Р°РЅРЅРµР№."
+		return "Нет банней."
 	}
 	if max <= 0 || max > len(bs) {
 		max = len(bs)
 	}
 	var sb strings.Builder
 	for _, bn := range bs[:max] {
-		sb.WriteString(fmt.Sprintf("В· %s вЂ” %s (by %s, %s)\n", bn.IP,
+		sb.WriteString(fmt.Sprintf("· %s — %s (by %s, %s)\n", bn.IP,
 			orEmpty(bn.Reason), bn.CreatedBy, time.Unix(bn.CreatedAt, 0).Format("2006-01-02 15:04")))
 	}
 	return sb.String()
@@ -117,7 +117,7 @@ func Describe(bs []*model.Ban, max int) string {
 
 func orEmpty(s string) string {
 	if s == "" {
-		return "вЂ”"
+		return "—"
 	}
 	return s
 }
