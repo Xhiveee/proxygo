@@ -103,7 +103,7 @@ ensure_source() {
 
 latest_go() {
     curl -fsSL "https://go.dev/dl/?mode=json" 2>/dev/null \
-        | tr -d '\n' | grep -o '"version":"go[0-9.]*"' | head -1 | cut -d'"' -f3 | sed 's/^go//'
+        | tr -d '\n' | grep -o '"version": *"go[0-9.]*"' | head -1 | cut -d'"' -f4 | sed 's/^go//'
 }
 
 install_go() {
