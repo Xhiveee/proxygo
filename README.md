@@ -73,6 +73,22 @@ sudo useradd -r -s /usr/sbin/nologin proxygo || true
 sudo systemctl daemon-reload && sudo systemctl enable --now proxygo
 ```
 
+### Единый CLI управления
+
+Ставится в `/usr/local/bin/proxygo` и является **единственным** интерфейсом.
+`proxygo stop` — это то же самое, что `systemctl stop proxygo` (CLI просто
+вызывает systemd, а при его отсутствии работает через pid-файл).
+
+```bash
+proxygo start | stop | restart | status      # сервис
+proxygo logs [N]                             # лог (по умолчанию 100)
+proxygo backends | bans | stats              # состояние из БД SQLite
+proxygo config                               # конфиг + путь
+proxygo build                                # перекомпилировать Go + Java
+proxygo update                               # git pull + build + restart
+proxygo remove [-y]                          # удалить (стоп + удалить/opt + юнит)
+```
+
 Управление: `proxygo start | stop | restart | status | logs | remove`.
 
 ### Docker

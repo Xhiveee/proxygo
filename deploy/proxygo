@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 #
-# proxygo - management CLI for the MC hybrid proxy.
+# proxygo - unified management CLI.
 #
-# Usage:
-#   proxygo start        start the service
-#   proxygo stop         stop the service
-#   proxygo restart      restart the service
-#   proxygo status       show service / process status
-#   proxygo logs [N]     tail the last N log lines (default 100)
-#   proxygo remove [-y]  stop, uninstall systemd unit, delete /opt/proxygo
+# This is the ONE interface for proxygo. Note: `proxygo stop` is exactly the
+# same operation as `systemctl stop proxygo` — the CLI is just a comfortable
+# wrapper around systemd (with a pid-file fallback when systemd is absent).
 #
-# Works with systemd (preferred) and falls back to a plain background process
-# + pid file when systemd is not available (e.g. the local project build).
+# Usage: proxygo <command> [args]
+#
+#   service      start | stop | restart | status
+#   logs [N]     tail the last N log lines (default 100)
+#   backends     list backends from the SQLite database
+#   bans         list blocked IPs from the database
+#   stats        aggregated traffic per backend (database)
+#   config       show config path + key settings
+#   build        rebuild Go binary + Java agent (local toolchains)
+#   update       git pull + rebuild + restart
+#   remove [-y]  uninstall (stop + delete /opt/proxygo + systemd unit)
+#
+# View: help | -h (this text)
 
 set -u
 
@@ -19,32 +26,33 @@ INSTALL_DIR="${PROXYGO_HOME:-/opt/proxygo}"
 BIN="$INSTALL_DIR/bin/proxygo"
 UNIT="proxygo.service"
 UNIT_FILE="/etc/systemd/system/$UNIT"
-CONFIG="$INSTALL_DIR/config.yaml"
+CONFIG="${PROXYGO_CONFIG:-$INSTALL_DIR/config.yaml}"
 PIDFILE="$INSTALL_DIR/run/proxygo.pid"
 NOHUP="$INSTALL_DIR/log/nohup.out"
 
 log()  { printf '\033[1;34m[proxygo]\033[0m %s\n' "$*"; }
 err()  { printf '\033[1;31m[proxygo]\033[0m %s\n' "$*" >&2; }
+die()  { err "$*"; exit 1; }
 
 have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
+is_unit_installed() { [ -f "$UNIT_FILE" ]; }
 
-start_foreground() {
-    if [ ! -x "$BIN" ]; then
-        err "binary not found: $BIN (build first: proxygo build)"
-        exit 1
-    fi
-    [ -f "$CONFIG" ] || err "config not found: $CONFIG (edit /opt/proxygo/config.yaml)"
+# ---------- lifecycle -------------------------------------------------------
+svc_start() {
+    if have_systemd && is_unit_installed; then systemctl start "$UNIT" && log "started ($UNIT)"; return; fi
+    [ -x "$BIN" ] || die "binary not found: $BIN (build: proxygo build)"
+    [ -f "$CONFIG" ] || err "config not found: $CONFIG"
     mkdir -p "$INSTALL_DIR/run" "$INSTALL_DIR/log"
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-        log "already running (pid $(cat "$PIDFILE"))"
-        return 0
+        log "already running (pid $(cat "$PIDFILE"))"; return
     fi
     nohup "$BIN" -config "$CONFIG" >>"$NOHUP" 2>&1 &
     echo $! > "$PIDFILE"
     log "started pid $(cat "$PIDFILE") (log: $NOHUP)"
 }
 
-stop_foreground() {
+svc_stop() {
+    if have_systemd && is_unit_installed; then systemctl stop "$UNIT" && log "stopped ($UNIT)"; return; fi
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
         log "stopping pid $(cat "$PIDFILE")"
         kill -TERM "$(cat "$PIDFILE")"
@@ -54,61 +62,63 @@ stop_foreground() {
     rm -f "$PIDFILE"
 }
 
-cmd_start() {
-    if have_systemd && [ -f "$UNIT_FILE" ]; then
-        systemctl start "$UNIT" && log "started via systemd ($UNIT)"
-    else
-        start_foreground
-    fi
-}
+svc_restart() { svc_stop; sleep 1; svc_start; log "restarted"; }
 
-cmd_stop() {
-    if have_systemd && [ -f "$UNIT_FILE" ]; then
-        systemctl stop "$UNIT" && log "stopped via systemd"
-    else
-        stop_foreground
-    fi
-}
-
-cmd_restart() {
-    cmd_stop
-    sleep 1
-    cmd_start
-    log "restarted"
-}
-
-cmd_status() {
-    if have_systemd && [ -f "$UNIT_FILE" ]; then
-        systemctl status "$UNIT" --no-pager | head -n 20
-    elif [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+svc_status() {
+    if have_systemd && is_unit_installed; then systemctl status "$UNIT" --no-pager | head -n 20; return; fi
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
         log "running pid $(cat "$PIDFILE")"
         ps -o pid,etime,cmd -p "$(cat "$PIDFILE")"
     else
-        err "proxygo is NOT running"
-        exit 3
+        die "proxygo is NOT running"
     fi
 }
 
 cmd_logs() {
     local n="${1:-100}"
-    local f
-    if have_systemd && [ -f "$UNIT_FILE" ]; then
+    if have_systemd && is_unit_installed; then
         journalctl -u "$UNIT" -n "$n" --no-pager
     else
-        f="$INSTALL_DIR/log/proxygo.log"
+        local f="$INSTALL_DIR/log/proxygo.log"
         [ -f "$f" ] || f="$NOHUP"
         tail -n "$n" "$f"
     fi
 }
 
+# ---------- data (delegates to the Go binary) -------------------------------
+cmd_data() {
+    [ -x "$BIN" ] || die "binary not found: $BIN (build: proxygo build)"
+    "$BIN" -config "$CONFIG" "$@"
+}
+
+cmd_config() {
+    log "config: $CONFIG"
+    if [ -f "$CONFIG" ]; then
+        sed -n '1,/^security:/p' "$CONFIG" | sed -n '1,40p'
+    else
+        err "config file not found"
+    fi
+}
+
+# ---------- build / update / remove ----------------------------------------
+cmd_build() { [ -x "$INSTALL_DIR/bin/proxygo-build.sh" ] && "$INSTALL_DIR/bin/proxygo-build.sh" || die "build script not found"; }
+
+cmd_update() {
+    [ -d "$INSTALL_DIR/.git" ] || die "no git checkout at $INSTALL_DIR"
+    ( cd "$INSTALL_DIR" && git pull --ff-only )
+    cmd_build
+    cmd_restart
+    log "updated"
+}
+
 cmd_remove() {
-    local force="$1"
+    local force="${1:-}"
     if [ "$force" != "-y" ]; then
         read -rp "This will DELETE $INSTALL_DIR and the systemd unit. Continue? (y/N) " ans
         [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { err "aborted"; exit 0; }
     fi
-    cmd_stop
-    if have_systemd && [ -f "$UNIT_FILE" ]; then
+    svc_stop
+    if have_systemd && is_unit_installed; then
         systemctl disable "$UNIT" 2>/dev/null || true
         rm -f "$UNIT_FILE"
         systemctl daemon-reload 2>/dev/null || true
@@ -118,22 +128,43 @@ cmd_remove() {
     log "removed $INSTALL_DIR, unit $UNIT and /usr/local/bin/proxygo"
 }
 
-case "${1:-}" in
-    start)   cmd_start "$@" ;;
-    stop)    cmd_stop ;;
-    restart) cmd_restart ;;
-    status)  cmd_status ;;
-    logs)    cmd_logs "${2:-100}" ;;
-    remove|uninstall) cmd_remove "${2:-}" ;;
-    build)   "$INSTALL_DIR/bin/proxygo-build.sh" ;;
-    *)
-        cat <<EOF
-proxygo - MC Hybrid Proxy manager
+usage() {
+    cat <<EOF
+proxygo - unified management CLI
 
-Usage:
-  proxygo start       start service             proxygo stop       stop service
-  proxygo restart     restart service           proxygo status     show status
-  proxygo logs [N]    tail log (default 100)    proxygo remove [-y]  uninstall
+Всё управление через одну команду. Замечание: 'proxygo stop' и
+'systemctl stop proxygo.service' — это одно и то же; CLI просто обёртка
+над systemd (и файлом pid, если systemd нет).
+
+Управление сервисом:
+  proxygo start    proxygo stop    proxygo restart
+  proxygo status
+
+Состояние (из БД SQLite):
+  proxygo backends     proxygo bans     proxygo stats
+
+Прочее:
+  proxygo logs [N]     tail лога (по умолчанию 100)
+  proxygo config       показать конфиг и его путь
+  proxygo build        перекомпилировать Go-бинарь + Java-агент
+  proxygo update       git pull + build + restart
+  proxygo remove [-y]  удалить proxygo (стоп + удалить /opt/proxygo + юнит)
+
+Полный список команд: proxygo help
 EOF
-        ;;
+}
+
+case "${1:-}" in
+    start)   svc_start ;;
+    stop)    svc_stop ;;
+    restart) svc_restart ;;
+    status)  svc_status ;;
+    logs)    cmd_logs "${2:-100}" ;;
+    backends|bans|stats) cmd_data "$1" ;;
+    config)  cmd_config ;;
+    build)   cmd_build ;;
+    update)  cmd_update ;;
+    remove|uninstall) cmd_remove "${2:-}" ;;
+    help|-h|--help|"") usage ;;
+    *) usage; die "unknown command: $1" ;;
 esac

@@ -224,11 +224,15 @@ ${GRN}============================================================${R}
   Docker                 : ${B}$docker_state${R}
   systemd юнит           : ${B}proxygo.service${R}
 
-${B}  Как пользоваться${R}
-    start / stop / restart / status / remove :
+${B}  Как пользоваться (единый CLI: /usr/local/bin/proxygo)${R}
+    Запуск/остановка/перезапуск/статус:
         ${B}proxygo start${R}   ${B}proxygo stop${R}   ${B}proxygo restart${R}
-        ${B}proxygo status${R}  ${B}proxygo logs 100${R}   ${B}proxygo remove -y${R}
-    (CLI установлен: /usr/local/bin/proxygo)
+        ${B}proxygo status${R}  ${B}proxygo logs 100${R}
+    Состояние из БД:        ${B}proxygo backends${R}   ${B}proxygo bans${R}   ${B}proxygo stats${R}
+    Конфиг / сборка / обновление / удаление:
+        ${B}proxygo config${R}  ${B}proxygo build${R}  ${B}proxygo update${R}  ${B}proxygo remove -y${R}
+    (Замечание: ${B}proxygo stop${R} == ${B}systemctl stop proxygo${R} — одно и то же;
+     CLI просто вызывает systemd, а при его отсутствии — pid-файл.)
 
 ${B}  Компиляция вручную (Go + Java, локальные тулчейны)${R}
         ${B}proxygo build${R}   # или  $BIN/proxygo-build.sh
