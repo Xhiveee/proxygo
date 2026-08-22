@@ -76,6 +76,7 @@ func (b *Bot) Start(ctx context.Context) error {
 			return fmt.Errorf("telegram proxy parse: %w", perr)
 		}
 		client := &http.Client{
+			Timeout: 20 * time.Second,
 			Transport: &http.Transport{
 				Proxy: http.ProxyURL(proxyURL),
 			},
@@ -85,7 +86,7 @@ func (b *Bot) Start(ctx context.Context) error {
 		api, err = tgbotapi.NewBotAPI(token)
 	}
 	if err != nil {
-		return fmt.Errorf("telegram login (проверь bot_token и доступ к api.telegram.org, при блокировке — настрой telegram.proxy): %w", err)
+		return fmt.Errorf("telegram login (проверь bot_token; если api.telegram.org недоступен — настрой telegram.proxy=socks5://user:pass@host:port или http://host:8080, предварительно проверив, что до прокси достукивается сеть): %w", err)
 	}
 	b.api = api
 	api.Debug = false
