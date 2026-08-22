@@ -43,7 +43,6 @@ cp config.example.yaml config.yaml   # заполнить bot_token / admin_ids
 Проверка:
 
 ```bash
-go test ./...
 go vet ./...
 ```
 
@@ -160,12 +159,6 @@ java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui
 
 Работает на Vanilla, Paper, Spigot, Fabric, Forge, Folia. Без PPv2-заголовка —
 прозрачен.
-
-### Тесты
-
-```bash
-cd proxygo-mc-agent && mvn test
-```
 
 ## Известные ограничения
 
