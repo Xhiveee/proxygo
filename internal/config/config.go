@@ -27,6 +27,10 @@ type Telegram struct {
 	RateLimitPerMin   int     `yaml:"rate_limit_per_minute"`
 	Disabled          bool    `yaml:"disabled"`
 	PollTimeoutSecond int     `yaml:"poll_timeout_seconds"`
+	// Proxy is an optional HTTP/SOCKS proxy (e.g. socks5://127.0.0.1:1080 or
+	// http://proxy:8080) used to reach api.telegram.org when it is blocked on
+	// the local network. Empty = direct connection.
+	Proxy string `yaml:"proxy"`
 }
 
 // Proxy holds runtime tuning for the forwarding layer.

@@ -5,6 +5,8 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,9 +63,29 @@ func (b *Bot) Notify(text string) {
 
 // Start begins long polling and the async notifier consumer.
 func (b *Bot) Start(ctx context.Context) error {
-	api, err := tgbotapi.NewBotAPI(b.cfg.Telegram.BotToken)
+	token := strings.TrimSpace(b.cfg.Telegram.BotToken)
+	if token == "" {
+		return fmt.Errorf("telegram disabled (empty token)")
+	}
+	var api *tgbotapi.BotAPI
+	var err error
+	if p := strings.TrimSpace(b.cfg.Telegram.Proxy); p != "" {
+		b.log.Info("telegram via proxy", "proxy", p)
+		proxyURL, perr := url.Parse(p)
+		if perr != nil {
+			return fmt.Errorf("telegram proxy parse: %w", perr)
+		}
+		client := &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		}
+		api, err = tgbotapi.NewBotAPIWithClient(token, "https://api.telegram.org/bot", client)
+	} else {
+		api, err = tgbotapi.NewBotAPI(token)
+	}
 	if err != nil {
-		return fmt.Errorf("telegram login (проверь bot_token): %w", err)
+		return fmt.Errorf("telegram login (проверь bot_token и доступ к api.telegram.org, при блокировке — настрой telegram.proxy): %w", err)
 	}
 	b.api = api
 	api.Debug = false

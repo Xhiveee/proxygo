@@ -73,6 +73,11 @@ proxygo config | build | update | remove [-y]
 
 Доступ только для `admin_ids`, rate-limit 10/мин.
 
+> ⚠️ Бот работает через **исходящее** HTTPS на `api.telegram.org:443` (long-polling,
+> входящие порты не нужны). Если Telegram недоступен из сети сервера (блокировка на
+> уровне ISP/региона) — укажи прокси в конфиге: `telegram.proxy: "socks5://host:1080"`
+> (или `http://host:8080`). После изменения конфига — `proxygo restart`.
+
 ```
 /start                     список команд
 /list                      таблица бэкендов

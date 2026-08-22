@@ -8,6 +8,10 @@ telegram:
   rate_limit_per_minute: 10
   poll_timeout_seconds: 30
   disabled: false                   # set true to run the proxy without a bot
+  # Optional: route the bot to api.telegram.org through a proxy/VPN. Needed if
+  # Telegram is unreachable from the host network (e.g. blocked ISP/region).
+  # Empty = direct. Examples: "socks5://host:1080" or "http://host:8080"
+  proxy: ""
 
 proxy:
   default_idle_timeout: "30m"       # TCP idle connection timeout
