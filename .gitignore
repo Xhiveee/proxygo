@@ -22,6 +22,10 @@ vendor/
 proxygo-mc-agent/target/
 *.class
 
+# Local notes / docs
+ARCHITECTURE.md
+proxy.md
+
 # OS / editors
 .DS_Store
 Thumbs.db
