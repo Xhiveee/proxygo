@@ -1,24 +1,36 @@
 package com.proxygo.agent;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
 import io.netty.util.AttributeKey;
 
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Map;
 
 /**
  * PPHandler - runtime logic that inspects the first inbound frame.
  *
- * <p>When a frame starts with the HAProxy PROXY v2 signature it is parsed to
- * recover the real client IP:port, that address is written back into the
- * connection's {@code address}/{@code socketAddress} field (located by
- * reflection so obfuscated or renamed fields still work), and the header bytes
- * are skipped so the engine sees only Minecraft protocol data.</p>
+ * <p>Two entry points are injected:
+ * <ul>
+ *   <li>{@link #handle} - from the Minecraft network manager class (conn is known
+ *       directly).</li>
+ *   <li>{@link #maybeHandle} - from Netty's {@code AbstractChannelHandlerContext
+ *       .invokeChannelRead}, which catches the raw {@link ByteBuf} BEFORE any
+ *       Minecraft decoder. This makes the agent universal across cores and
+ *       versions (Vanilla/Paper/Spigot/Fabric/Forge/Folia), because the Netty
+ *       class is stable.</li>
+ * </ul>
  *
- * <p>If no signature is present the connection is a direct link and the
- * handler is a no-op, so the agent is fully transparent.</p>
+ * <p>When a frame starts with the HAProxy PROXY v2 signature, it is parsed, the
+ * real client address is written back into the connection's
+ * {@code address}/{@code socketAddress} field (located by type or by scanning
+ * the pipeline), and the header bytes are skipped so the engine sees only
+ * Minecraft protocol data. Without a signature the handler is a transparent
+ * no-op.</p>
  */
 public final class PPHandler {
 
@@ -32,7 +44,7 @@ public final class PPHandler {
     };
 
     private static final int SIG_LEN = 12;
-    private static final int VERSION_LOCAL = 2; // header version is always 2
+    private static final int VERSION_LOCAL = 2;
     private static final int CMD_PROXY = 0x1;
 
     private static final int FAMILY_INET = 0x1;
@@ -41,20 +53,30 @@ public final class PPHandler {
     private static final AttributeKey<Boolean> DONE =
         AttributeKey.valueOf("proxygo-ppv2-handled");
 
-    /**
-     * Called from the instrumented {@code channelRead}{@code /0}.
-     *
-     * @param conn the network manager / connection instance (this)
-     * @param ctx  the Netty pipeline context
-     * @param msg  the inbound frame (a {@link ByteBuf} when data arrives)
-     */
+    /** Entry point injected into the Minecraft network manager. */
     public static void handle(Object conn, ChannelHandlerContext ctx, Object msg) {
-        if (conn == null || !(msg instanceof ByteBuf)) {
+        process(msg, ctx, conn);
+    }
+
+    /**
+     * Entry point injected into Netty's {@code AbstractChannelHandlerContext
+     * .invokeChannelRead}. The connection object is located by scanning the
+     * pipeline, so no Minecraft-specific class is needed.
+     */
+    public static void maybeHandle(Object ctxObj, Object msg) {
+        if (!(ctxObj instanceof ChannelHandlerContext)) {
+            return;
+        }
+        process(msg, (ChannelHandlerContext) ctxObj, null);
+    }
+
+    private static void process(Object msg, ChannelHandlerContext ctx, Object explicitConn) {
+        if (!(msg instanceof ByteBuf) || ctx == null) {
             return;
         }
         ByteBuf buf = (ByteBuf) msg;
 
-        if (ctx != null && ctx.channel().attr(DONE).get() != null) {
+        if (ctx.channel().attr(DONE).get() != null) {
             return;
         }
         // Not enough bytes to inspect yet; wait for the next segment.
@@ -67,7 +89,7 @@ public final class PPHandler {
             return; // direct connection - transparent pass-through
         }
 
-        int verCmd = buf.getUnsignedByte(idx + SIG_LEN);        // version << 4 | command
+        int verCmd = buf.getUnsignedByte(idx + SIG_LEN);
         int version = (verCmd >> 4) & 0x0F;
         int command = verCmd & 0x0F;
         if (version != VERSION_LOCAL) {
@@ -107,19 +129,20 @@ public final class PPHandler {
         }
 
         if (!buf.isReadable(headerLen)) {
-            // partial header - wait for the remaining bytes, do not mark done.
-            return;
+            return; // partial header - wait for the remaining bytes
         }
 
-        // Substitution is only meaningful for a PROXY (not LOCAL) command.
         if (command == CMD_PROXY && srcIp != null && srcPort > 0) {
-            try {
-                substitute(conn, new InetSocketAddress(srcIp, srcPort));
-            } catch (RuntimeException e) {
-                PPAgent.log("could not substitute address: " + e.getMessage());
+            Object target = explicitConn != null ? explicitConn : findConn(ctx);
+            if (target != null) {
+                try {
+                    substitute(target, new InetSocketAddress(srcIp, srcPort));
+                } catch (RuntimeException e) {
+                    PPAgent.log("could not substitute address: " + e.getMessage());
+                }
+            } else {
+                PPAgent.log("no Connection/NetworkManager found in pipeline for substitution");
             }
-        } else {
-            PPAgent.log("PPv2 header consumed but no substitution (cmd=" + command + ", family=" + family + ")");
         }
 
         buf.skipBytes(headerLen);
@@ -139,7 +162,7 @@ public final class PPHandler {
     }
 
     private static String readIPv4(ByteBuf buf, int idx) {
-        int b = idx + SIG_LEN + 4; // address block starts right after sig+v/c+f/p+len
+        int b = idx + SIG_LEN + 4;
         return (buf.getUnsignedByte(b)) + "." + buf.getUnsignedByte(b + 1) + "."
             + buf.getUnsignedByte(b + 2) + "." + buf.getUnsignedByte(b + 3);
     }
@@ -148,7 +171,6 @@ public final class PPHandler {
         int b = idx + SIG_LEN + 4;
         byte[] raw = new byte[16];
         buf.getBytes(b, raw);
-        // format as standard 8-group hex, best-effort.
         StringBuilder sb = new StringBuilder(39);
         for (int i = 0; i < 16; i += 2) {
             if (i > 0) {
@@ -165,6 +187,27 @@ public final class PPHandler {
         }
     }
 
+    // ----- locating the connection object -----------------------------------
+
+    private static Object findConn(ChannelHandlerContext ctx) {
+        try {
+            ChannelPipeline pipe = ctx.pipeline();
+            for (Map.Entry<String, ChannelHandler> e : pipe.toMap().entrySet()) {
+                Object h = e.getValue();
+                if (h == null) {
+                    continue;
+                }
+                String n = h.getClass().getName();
+                if (n.contains("Connection") || n.contains("NetworkManager")) {
+                    return h;
+                }
+            }
+        } catch (Throwable t) {
+            // ignore - best-effort
+        }
+        return null;
+    }
+
     // ----- reflection substitution ------------------------------------------
 
     /**
@@ -179,13 +222,12 @@ public final class PPHandler {
                 if (isAddressField(f)) {
                     try {
                         f.setAccessible(true);
-                        // try IllegalAccess on final fields by using the field directly
                         f.set(conn, addr);
                         PPAgent.log("substituted " + c.getSimpleName() + "#" + f.getName()
                             + " -> " + addr.getAddress().getHostAddress() + ":" + addr.getPort());
                         return;
                     } catch (Throwable t) {
-                        // Fall through to the next field / superclass.
+                        // fall through to the next field / superclass
                     }
                 }
             }

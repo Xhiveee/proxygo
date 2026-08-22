@@ -12,61 +12,70 @@ import java.security.ProtectionDomain;
 /**
  * PPTransformer - instrumenting {@link java.lang.instrument.ClassFileTransformer}.
  *
- * <p>It recognises the Minecraft network manager class (by name, since the
- * exact FQN differs per version/loader) and injects a call to
- * {@link PPHandler#handle} at the head of the inbound frame method
- * ({@code channelRead} / {@code channelRead0}). The injected call reads the
- * PROXY v2 header, substitutes the real client address and strips the header,
- * leaving the rest of the byte stream untouched for the engine.</p>
+ * <p>Two strategies are applied to make the agent universal across MC cores and
+ * versions:</p>
  *
- * <p>Every step is defensive: if the class or method cannot be found, or the
- * class is not the network manager, nothing is changed and {@code null} is
- * returned so the JVM keeps the original bytes.</p>
+ * <ol>
+ *   <li><b>Netty-level (primary, universal):</b> injects
+ *       {@code PPHandler.maybeHandle} at the head of Netty's
+ *       {@code AbstractChannelHandlerContext.invokeChannelRead}, i.e. exactly
+ *       where the raw {@link io.netty.buffer.ByteBuf} enters the pipeline BEFORE
+ *       any Minecraft decoder. Netty's class/method is stable across MC
+ *       versions and cores, so the PPv2 header is caught reliably.</li>
+ *   <li><b>Class-level (fallback):</b> injects {@code PPHandler.handle} into the
+ *       Minecraft network manager's {@code channelRead0}/{@code channelRead}
+ *       when the class is matched by name.</li>
+ * </ol>
+ *
+ * <p>Everything is defensive: if a class or method cannot be found the original
+ * bytes are returned unchanged.</p>
  */
 public class PPTransformer implements ClassFileTransformer {
 
-    /** Method names that deliver an inbound frame. */
+    /** Method names that deliver an inbound frame on the MC network manager. */
     private static final String[] INBOUND_METHODS = {"channelRead0", "channelRead"};
 
     /** Marker used to detect an already-instrumented method body. */
     private static final String HANDLER_FQN = "com.proxygo.agent.PPHandler.handle";
+    private static final String NETTY_FQN = "com.proxygo.agent.PPHandler.maybeHandle";
+
+    /** Netty classes that carry the raw inbound ByteBuf. */
+    private static final String NETTY_INVOKE = "io/netty/channel/AbstractChannelHandlerContext";
 
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) {
-        if (!isCandidate(className)) {
+        if (className == null) {
             return null;
         }
         try {
             ClassPool pool = ClassPool.getDefault();
             String name = className.replace('/', '.'); // bytecode name is slash-form
             if (loader != null) {
-                // make sure referenced classes (Netty etc.) resolve against the same loader
                 pool.insertClassPath(new LoaderClassPath(loader));
             }
             pool.insertClassPath(new ByteArrayClassPath(name, classfileBuffer));
             CtClass cc = pool.get(name);
 
-            if (instrument(cc)) {
-                byte[] out = cc.toBytecode();
-                PPAgent.log("instrumented " + name + " (" + out.length + " bytes)");
+            byte[] out = null;
+            if (className.equals(NETTY_INVOKE)) {
+                out = instrumentNetty(cc);
+            } else if (isNetworkManager(className)) {
+                out = instrument(cc);
+            }
+            if (out != null) {
+                cc.detach();
                 return out;
             }
             cc.detach();
         } catch (Throwable t) {
             PPAgent.log("transform skipped for " + className + ": " + t);
-            // never propagate - a best-effort agent must not break the server.
         }
         return null;
     }
 
-    /**
-     * @return true if {@code className} looks like a Minecraft network manager.
-     */
-    private static boolean isCandidate(String className) {
-        if (className == null) {
-            return false;
-        }
+    /** @return true if {@code className} looks like a Minecraft network manager. */
+    private static boolean isNetworkManager(String className) {
         return className.equals("net/minecraft/network/Connection")
             || className.equals("net/minecraft/server/network/NetworkManager")
             || className.equals("net/minecraft/network/NetworkManager")
@@ -75,28 +84,47 @@ public class PPTransformer implements ClassFileTransformer {
     }
 
     /**
-     * Injects the PPv2 parsing call into the first inbound-frame method found.
-     *
-     * @param cc the network manager class
-     * @return true if a method was successfully instrumented
+     * Injects the PPv2 parser at the head of Netty's static
+     * {@code invokeChannelRead(AbstractChannelHandlerContext, Object)}.
      */
-    private static boolean instrument(CtClass cc) throws Exception {
+    private static byte[] instrumentNetty(CtClass cc) throws Exception {
+        for (CtMethod m : cc.getDeclaredMethods()) {
+            if (!m.getName().equals("invokeChannelRead")) {
+                continue;
+            }
+            CtClass[] params = m.getParameterTypes();
+            if (params.length == 2 && params[0].getName().contains("ChannelHandlerContext")) {
+                // static: $1 = next ctx, $2 = msg (raw ByteBuf)
+                m.insertBefore(NETTY_FQN + "($1, $2);");
+                PPAgent.log("netty hook installed on " + cc.getName() + "#invokeChannelRead");
+                return cc.toBytecode();
+            }
+        }
+        PPAgent.log("netty hook: no invokeChannelRead(ChannelHandlerContext, Object) on " + cc.getName());
+        return null;
+    }
+
+    /**
+     * Injects the PPv2 parsing call into the first inbound-frame method found on
+     * the Minecraft network manager.
+     */
+    private static byte[] instrument(CtClass cc) throws Exception {
         for (String mname : INBOUND_METHODS) {
             CtMethod m = findMethod(cc, mname);
             if (m == null) {
                 continue;
             }
-            // Avoid double instrumentation (e.g. after a retransform).
             if (m.isEmpty() || !m.getMethodInfo().toString().contains(HANDLER_FQN)) {
                 // $0 = this, $1 = ChannelHandlerContext, $2 = inbound msg
                 m.insertBefore(HANDLER_FQN + "($0, $1, $2);");
             }
-            return true;
+            PPAgent.log("instrumented " + cc.getName() + "#" + mname);
+            return cc.toBytecode();
         }
-        PPAgent.log("candidate matched but NO incomg method (" + cc.getName()
-            + "); tried " + String.join(",", INBOUND_METHODS)
-            + ". Версия сервера может не совпадать с этим трансформером.");
-        return false;
+        PPAgent.log("candidate matched but NO inbound method on " + cc.getName()
+            + "; tried " + String.join(",", INBOUND_METHODS)
+            + ". (netty-level hook should still cover it)");
+        return null;
     }
 
     /**
@@ -104,8 +132,7 @@ public class PPTransformer implements ClassFileTransformer {
      * whose first parameter is a ChannelHandlerContext (matched loosely).
      */
     private static CtMethod findMethod(CtClass cc, String mname) throws Exception {
-        CtMethod[] methods;
-        methods = cc.getDeclaredMethods();
+        CtMethod[] methods = cc.getDeclaredMethods();
         for (CtMethod m : methods) {
             if (!mname.equals(m.getName())) {
                 continue;
