@@ -110,6 +110,9 @@ cmd_build() { [ -x "$INSTALL_DIR/bin/proxygo-build.sh" ] && "$INSTALL_DIR/bin/pr
 cmd_update() {
     [ -d "$INSTALL_DIR/.git" ] || die "no git checkout at $INSTALL_DIR"
     ( cd "$INSTALL_DIR" && git pull --ff-only )
+    # keep the installed CLI in sync with the repo copy (self-heal)
+    cp "$INSTALL_DIR/deploy/proxygo" /usr/local/bin/proxygo 2>/dev/null || true
+    chmod +x /usr/local/bin/proxygo 2>/dev/null || true
     cmd_build
     svc_restart
     log "updated"
