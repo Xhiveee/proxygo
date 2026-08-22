@@ -12,7 +12,7 @@
 #   * installs Go, a JDK and Maven *locally inside the project* (/opt/proxygo/.tool)
 #     so nothing is installed system-wide for compilation
 #   * compiles the Go proxy -> /opt/proxygo/bin/proxygo
-#   * compiles the Java agent  -> /opt/proxygo/bin/proxygo-mc-agent-1.0.0.jar
+#   * compiles the Java agent  -> /opt/proxygo/bin/proxygo-mc-agent.jar
 #   * asks for the Telegram bot token / admin IDs (skippable -> manual config)
 #   * installs a systemd unit + the 'proxygo' management CLI and (re)starts it
 #
@@ -155,9 +155,10 @@ build_sources() {
     if [ -x "$TOOL/maven/bin/mvn" ] && [ -x "$TOOL/jdk/bin/java" ]; then
         info "compiling Java agent ..."
         export JAVA_HOME="$TOOL/jdk" PATH="$TOOL/jdk/bin:$TOOL/maven/bin:$PATH"
-        ( cd "$INSTALL_DIR/proxygo-mc-agent" && mvn -q -DskipTests clean package )
-        cp "$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent-1.0.0.jar" "$BIN/proxygo-mc-agent-1.0.0.jar"
-        ok "Java agent -> $BIN/proxygo-mc-agent-1.0.0.jar"
+        ( cd "$INSTALL_DIR/proxygo-mc-agent" && mvn -q -Dmaven.test.skip=true clean package )
+        local jar="$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar"
+        [ -f "$jar" ] || { info "Java agent build did not produce $jar"; warn_agent=1; return 0; }
+        ok "Java agent -> $jar"
     else
         warn_agent=1
     fi
@@ -215,7 +216,7 @@ ${B}  proxygo  — установлен${R}
 ${GRN}============================================================${R}
   Путь установки        : ${B}$INSTALL_DIR${R}
   Go бинарь              : ${B}$BIN/proxygo${R}
-  Java агент (jar)       : ${B}$BIN/proxygo-mc-agent-1.0.0.jar${R}
+  Java агент (jar)       : ${B}$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar${R}
   Конфиг                 : ${B}$INSTALL_DIR/config.yaml${R}
   Данные (SQLite)        : ${B}$INSTALL_DIR/data/proxygo.db${R}
   Логи                   : ${B}$INSTALL_DIR/log/${R}
@@ -238,9 +239,8 @@ ${B}  Токен Telegram${R}
     'disabled: false' и перезапусти: ${B}proxygo restart${R}
 
 ${B}  Запуск Java-агента на сервере Minecraft (бэкенд в Германии)${R}
-    папка агента копируется из $INSTALL_DIR/proxygo-mc-agent
-    (или готовый jar):
-        ${B}java -javaagent:$BIN/proxygo-mc-agent-1.0.0.jar -jar server.jar nogui${R}
+    агент - это собранный jar (см. выше), для запуска укажи его путь:
+        ${B}java -javaagent:$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar -jar server.jar nogui${R}
     Агент должен работать на бэкенде-сервере Minectaft (VDS в Германии),
     к которому проксирует TCP-трафик proxygo.
 

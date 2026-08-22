@@ -35,10 +35,10 @@ if [ -x "$MAVEN" ] && [ -x "$JDK" ]; then
     log "building Java agent (local toolchain $TOOL/maven + $TOOL/jdk)"
     export JAVA_HOME="$TOOL/jdk"
     export PATH="$TOOL/jdk/bin:$TOOL/maven/bin:$PATH"
-    ( cd "$INSTALL_DIR/proxygo-mc-agent" && "$MAVEN" -q -DskipTests clean package )
-    cp "$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent-1.0.0.jar" \
-        "$INSTALL_DIR/bin/proxygo-mc-agent-1.0.0.jar"
-    log "agent jar -> $INSTALL_DIR/bin/proxygo-mc-agent-1.0.0.jar"
+    ( cd "$INSTALL_DIR/proxygo-mc-agent" && "$MAVEN" -q -Dmaven.test.skip=true clean package )
+    JAR="$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar"
+    [ -f "$JAR" ] || { log "Java agent build did not produce $JAR"; exit 1; }
+    log "agent jar -> $JAR"
 else
     log "Maven/JDK missing; skipping Java agent (run installer)"
 fi

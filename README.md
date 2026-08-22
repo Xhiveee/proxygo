@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/Xhiveee/proxygo/main/deploy/proxygo
 * ставит последний **Docker**, если его нет (пропустить: `PROXYGO_NO_DOCKER=1`);
 * клонирует проект в **`/opt/proxygo`**;
 * ставит Go/JDK/Maven в `/opt/proxygo/.tool` (только внутри проекта, не глобально);
-* собирает бинарь `/opt/proxygo/bin/proxygo` и агент `/opt/proxygo/bin/proxygo-mc-agent-1.0.0.jar`;
+* собирает бинарь `/opt/proxygo/bin/proxygo` и агент `/opt/proxygo/proxygo-mc-agent/target/proxygo-mc-agent.jar`;
 * спрашивает **Telegram-токен и admin_ids** — при пустом ответе бот отключается
   (`telegram.disabled: true`) и токен вписывается вручную в конфиг;
 * ставит systemd-юнит `proxygo.service` и CLI `proxygo`, запускает сервис.
@@ -147,13 +147,13 @@ pkg/ppv2            сборка/парсинг PROXY v2 заголовка
 ```bash
 cd proxygo-mc-agent
 mvn clean package
-# → target/proxygo-mc-agent-1.0.0.jar (fat-jar, javassist зашит внутрь)
+# → target/proxygo-mc-agent.jar (fat-jar, javassist зашит внутрь)
 ```
 
 ### Запуск
 
 ```bash
-java -javaagent:proxygo-mc-agent/target/proxygo-mc-agent-1.0.0.jar -jar server.jar nogui
+java -javaagent:proxygo-mc-agent/target/proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
 Мониторинг в консоли: строки с префиксом `[proxygo-agent]`.

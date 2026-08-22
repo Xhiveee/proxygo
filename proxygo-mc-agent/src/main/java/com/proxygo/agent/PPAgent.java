@@ -5,7 +5,7 @@ import java.lang.instrument.Instrumentation;
 /**
  * PPAgent - Java instrumentation entry point.
  *
- * <p>Loaded with {@code -javaagent:proxygo-mc-agent-1.0.0.jar}, it registers a
+ * <p>Loaded with {@code -javaagent:proxygo-mc-agent.jar}, it registers a
  * {@link java.lang.instrument.ClassFileTransformer} that rewrites the
  * Minecraft network manager so that, on the very first inbound frame, it reads
  * a HAProxy PROXY v2 header and replaces the connection's remote address with

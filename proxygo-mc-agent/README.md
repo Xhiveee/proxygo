@@ -10,13 +10,13 @@ HAProxy PROXY v2 заголовок и подменяет remote address сое�
 
 ```bash
 mvn clean package
-# → target/proxygo-mc-agent-1.0.0.jar (fat-jar)
+# → target/proxygo-mc-agent.jar (fat-jar)
 ```
 
 ## Запуск
 
 ```bash
-java -javaagent:target/proxygo-mc-agent-1.0.0.jar -jar server.jar nogui
+java -javaagent:target/proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
 Логи пишутся в stdout с префиксом `[proxygo-agent]`:
