@@ -1,17 +1,16 @@
-# MC Hybrid Proxy
+# proxygo
 
 Гибридный TCP/UDP-прокси для Minecraft с Telegram-админкой и Java-агентом для
-поддержки Proxy Protocol v2 на ванильном бэкенде.
+поддержки Proxy Protocol v2 (PPv2).
 
-Решает проблему роста пинга (40мс → 500-1000мс через 5 минут) у игроков из РФ,
-вызванную перегрузкой магистральных каналов РФ→Германия. Прокси поднимается на
-российском VDS: TCP (игра) передаётся с реальным IP игрока через PPv2, UDP
-(Voice Chat модов) проксируется прозрачно.
+Прокси передаёт реальный IP игрока на бэкенд через PPv2 (TCP) и прозрачно
+форвардит UDP. Java-агент на сервере читает PPv2 и подменяет remote address
+соединения — без плагинов/модов.
 
 ```
-Игрок (RU) ──► proxygo (RU VDS) ──► бэкенд (DE VDS)
-              │ TCP: + PPv2 header        Java Agent читает PPv2,
-              │ UDP: прозрачно            подменяет remote address
+клиент ──► proxygo ──► Minecraft (бэкенд)
+          │ TCP: + PPv2        Java Agent читает PPv2,
+          │ UDP: прозрачно     подменяет remote address
 ```
 
 ## Состав
@@ -21,46 +20,34 @@
 | Go Proxy | `./` | TCP/UDP прокси, Telegram-бот, SQLite, безопасность, метрики |
 | Java Agent | `./proxygo-mc-agent` | Байткод-трансформер для чтения PPv2 на сервере |
 
-## Установка на сервер (curl)
-
-Одной командой на свежем Linux VDS (ставятся Go, JDK и Maven **локально внутри
-проекта**, компилируются бинарь и Java-агент; сервис работает через **systemd**):
+## Установка на сервер
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Xhiveee/proxygo/main/deploy/proxygo-deploy.sh | sudo bash
 ```
 
-Скрипт сам:
-* клонирует проект в **`/opt/proxygo`**;
-* ставит Go/JDK/Maven в `/opt/proxygo/.tool` (только внутри проекта, не глобально);
-* собирает бинарь `/opt/proxygo/bin/proxygo` и агент `/opt/proxygo/proxygo-mc-agent/target/proxygo-mc-agent.jar`;
-* спрашивает **Telegram-токен и admin_ids** — при пустом ответе бот отключается
-  (`telegram.disabled: true`) и токен вписывается вручную в конфиг;
-* ставит systemd-юнит `proxygo.service` и CLI `proxygo`, запускает сервис.
+Скрипт: клонирует проект в `/opt/proxygo`, ставит Go/JDK/Maven локально
+(`/opt/proxygo/.tool`, не глобально), собирает бинарь и Java-агент, спрашивает
+Telegram-токен (пропуск — бот отключён на время), ставит systemd-юнит и CLI.
 
 > Для SSH-клона: `PROXYGO_REPO=git@github.com:Xhiveee/proxygo.git`.
 
-## Быстрый старт (Go Proxy)
+## Быстрый старт
 
 ```bash
-# 1. Сборка
 go build -trimpath -ldflags="-s -w" -o proxygo ./cmd/proxygo
-
-# 2. Конфиг
-cp config.example.yaml config.yaml   # указать bot_token, admin_ids и т.д.
-
-# 3. Запуск
+cp config.example.yaml config.yaml   # заполнить bot_token / admin_ids
 ./proxygo -config config.yaml
 ```
 
-Проверка тестов и линтера:
+Проверка:
 
 ```bash
 go test ./...
 go vet ./...
 ```
 
-### systemd (Linux)
+### systemd
 
 ```bash
 sudo mkdir -p /opt/proxygo/data /opt/proxygo/log/access /opt/proxygo/run
@@ -71,55 +58,42 @@ sudo useradd -r -s /usr/sbin/nologin proxygo || true
 sudo systemctl daemon-reload && sudo systemctl enable --now proxygo
 ```
 
-### Единый CLI управления
+### Единый CLI
 
-Ставится в `/usr/local/bin/proxygo` и является **единственным** интерфейсом.
-`proxygo stop` — это то же самое, что `systemctl stop proxygo` (CLI просто
-вызывает systemd, а при его отсутствии работает через pid-файл).
+`proxygo` в `/usr/local/bin/proxygo` — единый интерфейс. `proxygo stop` —
+то же, что `systemctl stop proxygo` (CLI вызывает systemd, иначе pid-файл).
 
 ```bash
-proxygo start | stop | restart | status      # сервис
-proxygo logs [N]                             # лог (по умолчанию 100)
-proxygo backends | bans | stats              # состояние из БД SQLite
-proxygo config                               # конфиг + путь
-proxygo build                                # перекомпилировать Go + Java
-proxygo update                               # git pull + build + restart
-proxygo remove [-y]                          # удалить (стоп + удалить/opt + юнит)
+proxygo start | stop | restart | status   # сервис
+proxygo logs [N]                          # хвост лога
+proxygo backends | bans | stats           # состояние из БД
+proxygo config | build | update | remove [-y]
 ```
-
-Управление: `proxygo start | stop | restart | status | logs | remove`.
 
 ## Telegram-команды
 
-Доступ только для `admin_ids` из конфига, с rate-limit 10/мин.
+Доступ только для `admin_ids`, rate-limit 10/мин.
 
 ```
-/start                      список команд
-/list                       таблица бэкендов
+/start                     список команд
+/list                      таблица бэкендов
 /add <name> <port> <tcp> [udp]   добавить бэкенд
-/add-udp <name> <udp>       прицепить UDP к TCP-бэкенду
+/add-udp <name> <udp>       прицепить UDP
 /remove-udp <name>          отключить UDP
-/remove <name|id>           удалить (с confirm-кнопкой, graceful drain)
+/remove <name|id>           удалить (с подтверждением, graceful drain)
 /restart <name>             пересоздать listener
-/stats | /stats <name>      общая / по бэкенду (кнопка refresh)
+/stats | /stats <name>      статистика (кнопка refresh)
 /ban <ip> [reason]          забанить (SQLite + iptables)
 /unban <ip>
 /bans                       список банов
 /log <N>                    последние N строк лога
 ```
 
-Пример:
-
-```
-/add survival 25565 193.23.221.21:25565 193.23.221.21:24454
-/add-udp survival 193.23.221.21:24454
-```
-
 ## Структура (Go)
 
 ```
-cmd/proxygo        main + wiring/signal handling
-internal/config     YAML-конфиг + валидация + whitelist
+cmd/proxygo        main + CLI-подкоманды + wiring/signal
+internal/config     YAML-конфиг + валидация + backend-whitelist
 internal/logging    structured JSON-логи + access.log + notify-канал
 internal/metrics    атомарные счётчики + per-IP окна (DDoS-детект)
 internal/model      общие типы (Backend, Ban, StatPoint, AuditEntry)
@@ -133,21 +107,17 @@ pkg/ppv2            сборка/парсинг PROXY v2 заголовка
 ## Схема БД (SQLite)
 
 `backends`, `bans`, `stats_hourly`, `audit_log` — миграции в
-`internal/storage/migrations/001_init.sql` (применяются автоматически,
-отслеживаются через `schema_migrations`).
+`internal/storage/migrations/001_init.sql`, применяются автоматически
+(отслеживаются через `schema_migrations`).
 
 ---
 
 # Java Agent (proxygo-mc-agent)
 
-Байткод-трансформер на Javassist, который перехватывает первый входящий фрейм
-сетевого менеджера Minecraft, читает PPv2 заголовок и подменяет remote address
-соединения. Не требует плагинов/модов/конфиг-файлов.
-
-> ⚠️ **Где работает:** агент ставится на **бэкенд-серверы Minecraft в Германии**
-> (к каждому отдельно), а **не** на РФ-сервер, где крутится proxygo. На
-> российском VDS достаточно собрать jar и потом скопировать/скачать его на
-> каждый немецкий сервер, положив в директорию этого сервера.
+Байткод-трансформер на Javassist: перехватывает первый входящий фрейм сетевого
+менеджера Minecraft, читает PPv2 заголовок и подменяет remote address. Устанавливается
+на каждый сервер Minecraft (бэкенд), а не на хост с proxygo — там jar достаточно
+собрать и скопировать.
 
 ### Сборка
 
@@ -157,43 +127,39 @@ mvn clean package
 # → target/proxygo-mc-agent.jar (fat-jar, javassist зашит внутрь)
 ```
 
-### Установка на каждый сервер в Германии
+### Установка на сервер Minecraft
 
-1. Собери jar (локально или на РФ-VDS через `proxygo build`).
-2. Скопируй `proxygo-mc-agent.jar` на немецкий сервер, в директорию сервера
-   (рядом с `server.jar`).
-3. Запускай сервер, агент указывается просто именем jar:
+1. Скопируй `proxygo-mc-agent.jar` на сервер в директорию сервера (рядом с `server.jar`).
+2. Запускай, указав агент просто именем jar:
 
 ```bash
 java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
-Мониторинг в консоли: строки с префиксом `[proxygo-agent]`.
+Мониторинг: строки с префиксом `[proxygo-agent]`.
 
 ### Как это работает
 
 1. `Premain` регистрирует `PPTransformer`.
-2. Трансформер находит класс сетевого менеджера
-   (`net.minecraft.network.Connection` / `NetworkManager`) и вставляет вызов
-   `PPHandler.handle($0,$1,$2)` в начало `channelRead`/`channelRead0`.
-3. `PPHandler`: если байфуф начинается с сигнатуры `0x0D0A...`, парсит
-   версию/команду/семейство, вынимает реальный IP:порт, рефлексией находит
-   поле типа `InetSocketAddress` и пишет в него адрес, затем `skipBytes` снимает
-   заголовок — движок видит только Minecraft-протокол.
-4. Если сигнатуры нет (прямое подключение) — обработчик просто возвращается,
-   агент полностью прозрачен.
+2. Трансформер находит сетевой класс (`Connection` / `NetworkManager`) и вставляет
+   вызов `PPHandler.handle($0,$1,$2)` в начало `channelRead`/`channelRead0`.
+3. `PPHandler`: если байфуф начинается с сигнатуры `0x0D0A...`, парсит заголовок,
+   рефлексией находит поле типа `InetSocketAddress` и пишет реальный IP:порт, затем
+   `skipBytes` снимает заголовок — движок видит только Minecraft-протокол.
+4. Если сигнатуры нет (прямое подключение) — прозрачный no-op.
 
-При обнаружении поля по типу, а не по имени, обфускация/переименования не мешают.
+Поле ищется по типу, а не по имени, поэтому обфускация/переименования не мешают.
 
 ### Таблица совместимости
 
-| Версия MC | Класс сети | Класс после трансформа |
-|---|---|---|
-| 1.7.10 – 1.17 | `net.minecraft.network.NetworkManager` | читает PPv2, подмена address |
-| 1.18 – 1.20.1 | `net.minecraft.server.network.NetworkManager` | то же |
-| 1.20.2 – 1.21+ | `net.minecraft.network.Connection` | то же (поле socketAddress) |
-| Vanilla / Paper / Spigot | сохраняют MCP-имена | поддерживается |
-| Fabric / Forge / Folia | своя загрузка классов | поддерживается (по имени) |
+| Версия MC | Сетевой класс |
+|---|---|
+| 1.7.10 – 1.17 | `net.minecraft.network.NetworkManager` |
+| 1.18 – 1.20.1 | `net.minecraft.server.network.NetworkManager` |
+| 1.20.2 – 1.21+ | `net.minecraft.network.Connection` |
+
+Работает на Vanilla, Paper, Spigot, Fabric, Forge, Folia. Без PPv2-заголовка —
+прозрачен.
 
 ### Тесты
 
@@ -201,19 +167,13 @@ java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui
 cd proxygo-mc-agent && mvn test
 ```
 
-Проверяются: парсинг PPv2 с подстановкой реального адреса и снятием заголовка,
-прозрачность при прямом подключении, частичный заголовок и сам трансформер.
-
 ## Известные ограничения
 
-- TCP idle-timeout применяется к обеим половинам стрима; при 30м простое
-  соединение закроется (настраивается `proxy.default_idle_timeout`).
-- UDP-сессии живут `udp_session_timeout`; голос начинает заново после паузы.
-- PPv2-заголовок должен приходить одним TCP-сегментом (в норме да, но при
-  крайней сегментации агент ждёт следующего фрейма).
-- `/log` читает файл лога; при повёрнутых логах (logrotate) часть строк может
-  теряться.
-- Агент меняет `InetSocketAddress` рефлексией; на Java 17+ с жёсткими модулями
-  (редкий кейс для серверов на classpath) поле может быть недоступно.
-- Баны в iptables требуют `CAP_NET_ADMIN`/root; без них работает только
-  внутренний ACL (SQLite).
+- TCP idle-timeout (30м) применяется к обеим половинам стрима —
+  `proxy.default_idle_timeout`.
+- UDP-сессии живут `udp_session_timeout`; голос начинается заново после паузы.
+- PPv2-заголовок должен прийти одним TCP-сегментом (иначе агент ждёт следующих байт).
+- Агент подменяет `InetSocketAddress` рефлексией; на Java 17+ с жёсткими модулями
+  поле может быть недоступно.
+- `enforce_iptables` требует root/`CAP_NET_ADMIN`; без него работает внутренний ACL.
+- `/log` читает файл лога; при logrotate часть строк может теряться.

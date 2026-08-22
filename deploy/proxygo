@@ -22,6 +22,10 @@
 
 set -u
 
+# colors
+B=$'\033[1m'; RED=$'\033[1;31m'; GRN=$'\033[1;32m'; BLU=$'\033[1;34m'
+CMD=$'\033[1;36m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+
 INSTALL_DIR="${PROXYGO_HOME:-/opt/proxygo}"
 BIN="$INSTALL_DIR/bin/proxygo"
 UNIT="proxygo.service"
@@ -30,8 +34,8 @@ CONFIG="${PROXYGO_CONFIG:-$INSTALL_DIR/config.yaml}"
 PIDFILE="$INSTALL_DIR/run/proxygo.pid"
 NOHUP="$INSTALL_DIR/log/nohup.out"
 
-log()  { printf '\033[1;34m[proxygo]\033[0m %s\n' "$*"; }
-err()  { printf '\033[1;31m[proxygo]\033[0m %s\n' "$*" >&2; }
+log()  { printf "$BLU[proxygo]$OFF %s\n" "$*"; }
+err()  { printf "$RED[proxygo]$OFF %s\n" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
 have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
@@ -129,29 +133,29 @@ cmd_remove() {
 }
 
 usage() {
-    cat <<EOF
-proxygo - unified management CLI
-
-Всё управление через одну команду. Замечание: 'proxygo stop' и
-'systemctl stop proxygo.service' — это одно и то же; CLI просто обёртка
-над systemd (и файлом pid, если systemd нет).
-
-Управление сервисом:
-  proxygo start    proxygo stop    proxygo restart
-  proxygo status
-
-Состояние (из БД SQLite):
-  proxygo backends     proxygo bans     proxygo stats
-
-Прочее:
-  proxygo logs [N]     tail лога (по умолчанию 100)
-  proxygo config       показать конфиг и его путь
-  proxygo build        перекомпилировать Go-бинарь + Java-агент
-  proxygo update       git pull + build + restart
-  proxygo remove [-y]  удалить proxygo (стоп + удалить /opt/proxygo + юнит)
-
-Полный список команд: proxygo help
-EOF
+    local rows=(
+        "start|Запустить сервис"
+        "stop|Остановить сервис (= systemctl stop proxygo)"
+        "restart|Перезапустить сервис"
+        "status|Статус сервиса"
+        "logs [N]|Хвост лога (по умолчанию 100)"
+        "backends|Список бэкендов (из БД SQLite)"
+        "bans|Список банов (из БД)"
+        "stats|Статистика по бэкендам (из БД)"
+        "config|Показать конфиг и его путь"
+        "build|Перекомпилировать Go-бинарь + Java-агент"
+        "update|Обновить (git pull + build + restart)"
+        "remove [-y]|Удалить proxygo (стоп + удалить /opt + юнит)"
+        "help|Эта справка"
+    )
+    local c d
+    printf "$B%s$OFF\n" "proxygo — единый CLI управления  (сервис работает через systemd)"
+    printf "$DIM%s$OFF\n\n" "'proxygo stop' == 'systemctl stop proxygo' — CLI просто вызывает systemd (иначе pid-файл)."
+    for r in "${rows[@]}"; do
+        c="${r%%|*}"; d="${r#*|}"
+        printf "  $CMD%-22s$OFF $DIM%s$OFF\n" "$c" "$d"
+    done
+    printf "\n$DIM%s$OFF\n" "Полный список: proxygo help"
 }
 
 case "${1:-}" in

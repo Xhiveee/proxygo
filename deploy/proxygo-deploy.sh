@@ -36,6 +36,7 @@ BIN="$INSTALL_DIR/bin"
 TOOL="$INSTALL_DIR/.tool"
 
 RED=$'\033[1;31m'; GRN=$'\033[1;32m'; YEL=$'\033[1;33m'; B=$'\033[1m'; R=$'\033[0m'
+C_CYAN=$'\033[1;36m'; DIM=$'\033[2m'
 log() { printf "${B}[proxygo]${R} %s\n" "$*"; }
 ok()  { printf "${GRN}+ %s${R}\n" "$*"; }
 info(){ printf "${YEL}  %s${R}\n" "$*"; }
@@ -191,47 +192,33 @@ summary() {
     cat <<EOF
 
 ${GRN}============================================================${R}
-${B}  proxygo  — установлен${R}
+${B}  proxygo — установлен${R}
 ${GRN}============================================================${R}
-  Путь установки        : ${B}$INSTALL_DIR${R}
-  Go бинарь              : ${B}$BIN/proxygo${R}
-  Java агент (jar)       : ${B}$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar${R}
-  Конфиг                 : ${B}$INSTALL_DIR/config.yaml${R}
-  Данные (SQLite)        : ${B}$INSTALL_DIR/data/proxygo.db${R}
-  Логи                   : ${B}$INSTALL_DIR/log/${R}
-  Локальные тулчейны     : ${B}$TOOL/{go,jdk,maven}${R}
-  systemd юнит           : ${B}proxygo.service${R}
+  Установка      : ${B}$INSTALL_DIR${R}   (systemd: ${B}proxygo.service${R})
+  Go-бинарь      : ${B}$BIN/proxygo${R}
+  Java-агент     : ${B}$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar${R}
+  Конфиг         : ${B}$INSTALL_DIR/config.yaml${R}
+  Данные          : ${B}$INSTALL_DIR/data/${R}   Логи: ${B}$INSTALL_DIR/log/${R}
+  Тулчейны        : ${B}$TOOL/{go,jdk,maven}${R}   (локально, не глобально)
 
-${B}  Как пользоваться (единый CLI: /usr/local/bin/proxygo)${R}
-    Запуск/остановка/перезапуск/статус:
-        ${B}proxygo start${R}   ${B}proxygo stop${R}   ${B}proxygo restart${R}
-        ${B}proxygo status${R}  ${B}proxygo logs 100${R}
-    Состояние из БД:        ${B}proxygo backends${R}   ${B}proxygo bans${R}   ${B}proxygo stats${R}
-    Конфиг / сборка / обновление / удаление:
-        ${B}proxygo config${R}  ${B}proxygo build${R}  ${B}proxygo update${R}  ${B}proxygo remove -y${R}
-    (Замечание: ${B}proxygo stop${R} == ${B}systemctl stop proxygo${R} — одно и то же;
-     CLI просто вызывает systemd, а при его отсутствии — pid-файл.)
+${B}  Как пользоваться (единый CLI)${R}
+${C_CYAN}  proxygo start    ${R}  запустить
+${C_CYAN}  proxygo stop     ${R}  остановить (= systemctl stop proxygo)
+${C_CYAN}  proxygo restart  ${R}  перезапустить
+${C_CYAN}  proxygo status   ${R}  статус
+${C_CYAN}  proxygo logs [N] ${R}  хвост лога
+${C_CYAN}  proxygo backends ${R}  список бэкендов (БД)
+${C_CYAN}  proxygo bans     ${R}  список банов (БД)
+${C_CYAN}  proxygo stats    ${R}  статистика (БД)
+${C_CYAN}  proxygo config   ${R}  показать конфиг
+${C_CYAN}  proxygo build    ${R}  перекомпилировать (Go + Java)
+${C_CYAN}  proxygo update   ${R}  обновить (git pull + build + restart)
+${C_CYAN}  proxygo remove -y ${R} удалить proxygo
+${DIM}  Полная справка: proxygo help${R}
 
-${B}  Компиляция вручную (Go + Java, локальные тулчейны)${R}
-        ${B}proxygo build${R}   # или  $BIN/proxygo-build.sh
-
-${B}  Токен Telegram${R}
-    Если при установке токен не введён — бот отключён (telegram.disabled=true).
-    Укажи токен и admin_ids в $INSTALL_DIR/config.yaml, поставь
-    'disabled: false' и перезапусти: ${B}proxygo restart${R}
-
-${B}  Java-агент для серверов Minecraft в ГЕРМАНИИ (не на этом VDS)${R}
-    Агент НЕ запускается на этом (РФ) сервере с proxygo.
-    Он ставится на КАЖДЫЙ бэкенд-сервер Minecraft в Германии:
-    скачай/скопируй собранный jar на каждый такой сервер и положи
-    его В ДИРЕКТОРИЮ ЭТОГО СЕРВЕРА (рядом с server.jar), затем запускай:
-        ${B}java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui${R}
-    Готовый jar лежит здесь (забери и скопируй на каждый немецкий сервер):
-        ${B}$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar${R}
-
-${B}  Включённые порты${R}
-    TCP/UDP бэкендов задаются командами Telegram (например /add survival 25565 ...).
-    Открой их в файрволе, если он активен.
+${B}  Telegram${R}   настрой в ${B}$INSTALL_DIR/config.yaml${R} (bot_token, admin_ids, disabled).
+${B}  Java-агент${R}  jar собран — скопируй его на серверы с Minecraft и добавь
+                 в запуск: ${B}java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui${R}
 
 ${GRN}============================================================${R}
 EOF
