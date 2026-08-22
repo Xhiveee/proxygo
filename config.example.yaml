@@ -1,0 +1,35 @@
+# Example configuration for the MC hybrid proxy.
+# Copy to config.yaml and adjust. Paths assume a systemd install with the
+# service running as its own user.
+
+telegram:
+  bot_token: "123456:ABC-DEF-...your-bot-token"
+  admin_ids: [123456789]            # your Telegram numeric IDs, comma separated
+  rate_limit_per_minute: 10
+  poll_timeout_seconds: 30
+  disabled: false                   # set true to run the proxy without a bot
+
+proxy:
+  default_idle_timeout: "30m"       # TCP idle connection timeout
+  udp_session_timeout: "60s"        # UDP session inactivity timeout
+  buffer_size: 32768                # 32KB streaming buffer
+  listen_interface: "0.0.0.0"       # interface to bind listeners on
+
+storage:
+  path: "/opt/proxygo/data/proxygo.db"
+
+logging:
+  level: "info"                     # debug | info | warn | error
+  format: "json"                    # json | console
+  file: "/opt/proxygo/log/proxygo.log"
+  access_log_dir: "/opt/proxygo/log/access/"
+
+security:
+  # Restrict which backend addresses the proxy is allowed to dial.
+  # Empty list = allow any. Supports bare IPs and CIDR. (SSRF protection)
+  backend_whitelist: ["193.23.221.0/24", "5.188.0.0/16"]
+  max_tcp_connections_per_ip: 3
+  max_udp_packets_per_ip_per_sec: 100
+  max_tcp_connections_per_min_ddos: 100
+  max_udp_packets_per_min_ddos: 1000
+  enforce_iptables: true            # mirror bans to iptables (needs root/NET_ADMIN)

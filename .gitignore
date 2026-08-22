@@ -1,0 +1,29 @@
+# Go
+/proxygo
+*.exe
+*.test
+*.out
+vendor/
+
+# Runtime build/toolchain dirs (created by deploy into /opt/proxygo)
+/bin/
+/.tool/
+/data/
+/log/
+/run/
+
+# State / logs
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Java
+proxygo-mc-agent/target/
+*.class
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

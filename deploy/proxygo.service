@@ -1,0 +1,32 @@
+[Unit]
+Description=proxygo - MC Hybrid TCP/UDP Proxy with Telegram admin
+Documentation=https://github.com/Xhiveee/proxygo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/proxygo
+ExecStart=/opt/proxygo/bin/proxygo -config /opt/proxygo/config.yaml
+Restart=on-failure
+RestartSec=5
+# Graceful shutdown via SIGTERM (drains active connections).
+KillSignal=SIGTERM
+TimeoutStopSec=40
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/proxygo
+
+# iptables enforce needs NET_ADMIN + CAP_NET_RAW; remove the line to disable.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+# Resource limits
+LimitNOFILE=1048576
+LimitNPROC=infinity
+
+[Install]
+WantedBy=multi-user.target

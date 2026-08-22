@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+#
+# proxygo - management CLI for the MC hybrid proxy.
+#
+# Usage:
+#   proxygo start        start the service
+#   proxygo stop         stop the service
+#   proxygo restart      restart the service
+#   proxygo status       show service / process status
+#   proxygo logs [N]     tail the last N log lines (default 100)
+#   proxygo remove [-y]  stop, uninstall systemd unit, delete /opt/proxygo
+#
+# Works with systemd (preferred) and falls back to a plain background process
+# + pid file when systemd is not available (e.g. the local project build).
+
+set -u
+
+INSTALL_DIR="${PROXYGO_HOME:-/opt/proxygo}"
+BIN="$INSTALL_DIR/bin/proxygo"
+UNIT="proxygo.service"
+UNIT_FILE="/etc/systemd/system/$UNIT"
+CONFIG="$INSTALL_DIR/config.yaml"
+PIDFILE="$INSTALL_DIR/run/proxygo.pid"
+NOHUP="$INSTALL_DIR/log/nohup.out"
+
+log()  { printf '\033[1;34m[proxygo]\033[0m %s\n' "$*"; }
+err()  { printf '\033[1;31m[proxygo]\033[0m %s\n' "$*" >&2; }
+
+have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
+
+start_foreground() {
+    if [ ! -x "$BIN" ]; then
+        err "binary not found: $BIN (build first: proxygo build)"
+        exit 1
+    fi
+    [ -f "$CONFIG" ] || err "config not found: $CONFIG (edit /opt/proxygo/config.yaml)"
+    mkdir -p "$INSTALL_DIR/run" "$INSTALL_DIR/log"
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        log "already running (pid $(cat "$PIDFILE"))"
+        return 0
+    fi
+    nohup "$BIN" -config "$CONFIG" >>"$NOHUP" 2>&1 &
+    echo $! > "$PIDFILE"
+    log "started pid $(cat "$PIDFILE") (log: $NOHUP)"
+}
+
+stop_foreground() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        log "stopping pid $(cat "$PIDFILE")"
+        kill -TERM "$(cat "$PIDFILE")"
+        for _ in $(seq 1 40); do kill -0 "$(cat "$PIDFILE")" 2>/dev/null || break; sleep 1; done
+        kill -KILL "$(cat "$PIDFILE")" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+}
+
+cmd_start() {
+    if have_systemd && [ -f "$UNIT_FILE" ]; then
+        systemctl start "$UNIT" && log "started via systemd ($UNIT)"
+    else
+        start_foreground
+    fi
+}
+
+cmd_stop() {
+    if have_systemd && [ -f "$UNIT_FILE" ]; then
+        systemctl stop "$UNIT" && log "stopped via systemd"
+    else
+        stop_foreground
+    fi
+}
+
+cmd_restart() {
+    cmd_stop
+    sleep 1
+    cmd_start
+    log "restarted"
+}
+
+cmd_status() {
+    if have_systemd && [ -f "$UNIT_FILE" ]; then
+        systemctl status "$UNIT" --no-pager | head -n 20
+    elif [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        log "running pid $(cat "$PIDFILE")"
+        ps -o pid,etime,cmd -p "$(cat "$PIDFILE")"
+    else
+        err "proxygo is NOT running"
+        exit 3
+    fi
+}
+
+cmd_logs() {
+    local n="${1:-100}"
+    local f
+    if have_systemd && [ -f "$UNIT_FILE" ]; then
+        journalctl -u "$UNIT" -n "$n" --no-pager
+    else
+        f="$INSTALL_DIR/log/proxygo.log"
+        [ -f "$f" ] || f="$NOHUP"
+        tail -n "$n" "$f"
+    fi
+}
+
+cmd_remove() {
+    local force="$1"
+    if [ "$force" != "-y" ]; then
+        read -rp "This will DELETE $INSTALL_DIR and the systemd unit. Continue? (y/N) " ans
+        [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { err "aborted"; exit 0; }
+    fi
+    cmd_stop
+    if have_systemd && [ -f "$UNIT_FILE" ]; then
+        systemctl disable "$UNIT" 2>/dev/null || true
+        rm -f "$UNIT_FILE"
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+    rm -rf "$INSTALL_DIR"
+    rm -f /usr/local/bin/proxygo
+    log "removed $INSTALL_DIR, unit $UNIT and /usr/local/bin/proxygo"
+}
+
+case "${1:-}" in
+    start)   cmd_start "$@" ;;
+    stop)    cmd_stop ;;
+    restart) cmd_restart ;;
+    status)  cmd_status ;;
+    logs)    cmd_logs "${2:-100}" ;;
+    remove|uninstall) cmd_remove "${2:-}" ;;
+    build)   "$INSTALL_DIR/bin/proxygo-build.sh" ;;
+    *)
+        cat <<EOF
+proxygo - MC Hybrid Proxy manager
+
+Usage:
+  proxygo start       start service             proxygo stop       stop service
+  proxygo restart     restart service           proxygo status     show status
+  proxygo logs [N]    tail log (default 100)    proxygo remove [-y]  uninstall
+EOF
+        ;;
+esac
