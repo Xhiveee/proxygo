@@ -171,8 +171,8 @@ security:
 - Чистая структура: cmd/, internal/, pkg/
 - Интерфейсы: Proxy, Backend, Storage, Notifier, UDPForwarder
 - Context propagation + errgroup
-- Зависимости только: telegram-lib + modernc.org/sqlite
-- Dockerfile (multi-stage) + systemd unit
+- Deps: telegram-lib + modernc.org/sqlite only
+- systemd unit
 - README с инструкциями
 
 # Требования к коду
@@ -198,7 +198,7 @@ security:
 1. Структура папок + все .go файлы
 2. go.mod
 3. config.example.yaml
-4. Dockerfile + mc-proxy.service
+4. systemd unit (proxygo.service)
 5. SQL-миграции для SQLite
 6. README.md
 

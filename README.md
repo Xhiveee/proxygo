@@ -38,9 +38,6 @@ curl -fsSL https://raw.githubusercontent.com/Xhiveee/proxygo/main/deploy/proxygo
   (`telegram.disabled: true`) и токен вписывается вручную в конфиг;
 * ставит systemd-юнит `proxygo.service` и CLI `proxygo`, запускает сервис.
 
-> **Docker не используется** — proxygo работает нативно через systemd. `Dockerfile`
-> оставлен только как опциональный контейнерный вариант для тех, кто хочет.
-
 > Для SSH-клона: `PROXYGO_REPO=git@github.com:Xhiveee/proxygo.git`.
 
 ## Быстрый старт (Go Proxy)
@@ -91,22 +88,6 @@ proxygo remove [-y]                          # удалить (стоп + уда
 ```
 
 Управление: `proxygo start | stop | restart | status | logs | remove`.
-
-### Docker (опционально, не используется деплоем)
-
-Основной деплой — через systemd. Docker здесь только как альтернатива для запуска
-в контейнере:
-
-```bash
-docker build -t proxygo .
-docker run -d --name proxygo --cap-add=NET_ADMIN \
-  -v /opt/proxygo/data:/opt/proxygo/data \
-  -v /opt/proxygo/log:/opt/proxygo/log \
-  -p 80-9000:80-9000/udp -p 80-9000:80-9000/tcp proxygo
-```
-
-> `--cap-add=NET_ADMIN` нужен только если `security.enforce_iptables: true`.
-> Скрипт `proxygo-deploy.sh` Docker **не ставит и не использует**.
 
 ## Telegram-команды
 

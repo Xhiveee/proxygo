@@ -15,10 +15,6 @@
 #   * asks for the Telegram bot token / admin IDs (skippable -> manual config)
 #   * installs a systemd unit + the 'proxygo' management CLI and (re)starts it
 #
-# NOTE: proxygo runs natively under systemd (binary + unit). Docker is NOT
-# installed or used by this script; a Dockerfile is provided only as an
-# optional, alternative deployment path.
-#
 # Override via env:
 #   PROXYGO_REPO        repo to clone (default the HTTPS URL; use git@ for SSH)
 #   PROXYGO_BRANCH      branch (default main)
@@ -72,8 +68,6 @@ ensure_basics() {
     for c in curl tar git; do command -v "$c" >/dev/null || die "missing required tool: $c"; done
     ok "system basics ok"
 }
-
-# proxygo runs natively under systemd; no Docker is needed.
 
 ensure_source() {
     if [ -d "$INSTALL_DIR/.git" ]; then
@@ -206,7 +200,6 @@ ${GRN}============================================================${R}
   Данные (SQLite)        : ${B}$INSTALL_DIR/data/proxygo.db${R}
   Логи                   : ${B}$INSTALL_DIR/log/${R}
   Локальные тулчейны     : ${B}$TOOL/{go,jdk,maven}${R}
-  Docker                 : не используется — сервис работает через systemd
   systemd юнит           : ${B}proxygo.service${R}
 
 ${B}  Как пользоваться (единый CLI: /usr/local/bin/proxygo)${R}
