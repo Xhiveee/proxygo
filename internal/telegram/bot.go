@@ -63,11 +63,21 @@ func (b *Bot) Notify(text string) {
 func (b *Bot) Start(ctx context.Context) error {
 	api, err := tgbotapi.NewBotAPI(b.cfg.Telegram.BotToken)
 	if err != nil {
-		return fmt.Errorf("telegram login: %w", err)
+		return fmt.Errorf("telegram login (проверь bot_token): %w", err)
 	}
 	b.api = api
 	api.Debug = false
-	b.log.Info("telegram bot connected", "user", api.Self.UserName)
+	b.log.Info("telegram bot connected", "user", api.Self.UserName,
+		"admins", b.cfg.Telegram.AdminIDs, "n_admins", len(b.cfg.Telegram.AdminIDs))
+	if len(b.cfg.Telegram.AdminIDs) == 0 {
+		b.log.Warn("telegram admin_ids is empty — bot will ignore everyone")
+	}
+
+	// If a webhook was ever set (e.g. by another tool), long polling would
+	// fail with 409 Conflict. Best-effort clear it.
+	if _, werr := api.Request(tgbotapi.DeleteWebhookConfig{}); werr != nil {
+		b.log.Warn("webhook cleanup failed", "err", werr)
+	}
 
 	go b.notifyLoop()
 
@@ -126,7 +136,10 @@ func (b *Bot) handleUpdate(upd tgbotapi.Update) {
 	msg := upd.Message
 	uid := msg.From.ID
 	if !b.cfg.AdminAllowed(uid) {
-		b.log.Info("non-admin blocked", "from", uid, "text", msg.Text)
+		b.log.Warn("non-admin message ignored", "from", uid,
+			"name", msg.From.FirstName+" "+msg.From.LastName,
+			"allowed", b.cfg.Telegram.AdminIDs, "text", msg.Text)
+		b.reply(msg, "⛔ Доступ только для администраторов.")
 		return
 	}
 	if !b.limiter.Allow(strconv.FormatInt(uid, 10)) {
