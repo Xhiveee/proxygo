@@ -111,7 +111,7 @@ cmd_update() {
     [ -d "$INSTALL_DIR/.git" ] || die "no git checkout at $INSTALL_DIR"
     ( cd "$INSTALL_DIR" && git pull --ff-only )
     cmd_build
-    cmd_restart
+    svc_restart
     log "updated"
 }
 
