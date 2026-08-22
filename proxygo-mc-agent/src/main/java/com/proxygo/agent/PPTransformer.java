@@ -39,9 +39,6 @@ public class PPTransformer implements ClassFileTransformer {
     private static final String HANDLER_FQN = "com.proxygo.agent.PPHandler.handle";
     private static final String NETTY_FQN = "com.proxygo.agent.PPHandler.maybeHandle";
 
-    /** Netty classes that carry the raw inbound ByteBuf. */
-    private static final String NETTY_INVOKE = "io/netty/channel/AbstractChannelHandlerContext";
-
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) {
@@ -58,7 +55,8 @@ public class PPTransformer implements ClassFileTransformer {
             CtClass cc = pool.get(name);
 
             byte[] out = null;
-            if (className.equals(NETTY_INVOKE)) {
+            // Netty may be relocated (e.g. by Forge/Paper), so match by suffix.
+            if (className.endsWith("AbstractChannelHandlerContext")) {
                 out = instrumentNetty(cc);
             } else if (isNetworkManager(className)) {
                 out = instrument(cc);
@@ -74,13 +72,11 @@ public class PPTransformer implements ClassFileTransformer {
         return null;
     }
 
-    /** @return true if {@code className} looks like a Minecraft network manager. */
+    /** @return true if {@code className} is a Minecraft network manager. */
     private static boolean isNetworkManager(String className) {
-        return className.equals("net/minecraft/network/Connection")
-            || className.equals("net/minecraft/server/network/NetworkManager")
-            || className.equals("net/minecraft/network/NetworkManager")
-            || className.endsWith("Connection")
-            || className.endsWith("NetworkManager");
+        // Only MC namespaces (not java.net.*, sun.*, cpw.*, etc.).
+        return className.startsWith("net/minecraft/")
+            && (className.endsWith("Connection") || className.endsWith("NetworkManager"));
     }
 
     /**
