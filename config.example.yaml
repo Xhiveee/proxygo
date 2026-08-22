@@ -8,9 +8,10 @@ telegram:
   rate_limit_per_minute: 10
   poll_timeout_seconds: 30
   disabled: false                   # set true to run the proxy without a bot
-  # Optional: route the bot to api.telegram.org through a proxy/VPN. Needed if
-  # Telegram is unreachable from the host network (e.g. blocked ISP/region).
-  # Empty = direct. Examples: "socks5://host:1080" or "http://host:8080"
+  # Optional: route the bot to api.telegram.org through an HTTP/SOCKS proxy or
+  # VPN. Needed when Telegram is unreachable from the host network (blocked
+  # ISP/region). Empty = direct. MTProto proxy does NOT work for the Bot API.
+  # Examples: "socks5://host:1080" or "http://host:8080"
   proxy: ""
 
 proxy:

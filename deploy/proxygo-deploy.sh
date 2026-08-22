@@ -164,21 +164,26 @@ make_config() {
     [ -f "$cfg" ] && { log "config.yaml exists -> leaving it"; return; }
     cp "$INSTALL_DIR/config.example.yaml" "$cfg"
 
-    local TOKEN="${TELEGRAM_TOKEN:-}" ADMINS="${TELEGRAM_ADMINS:-}"
+    local TOKEN="${TELEGRAM_TOKEN:-}" ADMINS="${TELEGRAM_ADMINS:-}" PROXY="${TELEGRAM_PROXY:-}"
     if [ -z "$TOKEN" ]; then
         ask "${B}Telegram bot token${R} (Enter — пропустить, потом впишешь вручную): " TOKEN || true
     fi
     if [ -z "$ADMINS" ]; then
         ask "${B}Telegram admin user IDs${R}, через запятую (например 8622549424 или 8622549424,7777777777): " ADMINS || true
     fi
+    if [ -z "$PROXY" ]; then
+        ask "${B}Прокси для Telegram${R} (socks5://host:1080 | http://host:8080; Enter — пропустить): " PROXY || true
+    fi
     # нормализуем: убираем пробелы и хвостовую запятую
     TOKEN="$(printf '%s' "$TOKEN" | xargs 2>/dev/null || printf '%s' "$TOKEN")"
     ADMINS="$(printf '%s' "$ADMINS" | xargs 2>/dev/null || printf '%s' "$ADMINS")"
+    PROXY="$(printf '%s' "$PROXY" | xargs 2>/dev/null || printf '%s' "$PROXY")"
     ADMINS="${ADMINS%,}"
 
     if [ -n "$TOKEN" ]; then
         sed -i -E "s#^  bot_token:.*#  bot_token: \"$TOKEN\"#" "$cfg"
         [ -n "$ADMINS" ] && sed -i -E "s#^  admin_ids:.*#  admin_ids: [$ADMINS]#" "$cfg"
+        [ -n "$PROXY" ] && sed -i -E "s#^  proxy:.*#  proxy: \"$PROXY\"#" "$cfg"
         sed -i -E "s#^  disabled:.*#  disabled: false#" "$cfg"
         ok "Telegram bot configured"
     else

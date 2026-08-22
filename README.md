@@ -75,8 +75,9 @@ proxygo config | build | update | remove [-y]
 
 > ⚠️ Бот работает через **исходящее** HTTPS на `api.telegram.org:443` (long-polling,
 > входящие порты не нужны). Если Telegram недоступен из сети сервера (блокировка на
-> уровне ISP/региона) — укажи прокси в конфиге: `telegram.proxy: "socks5://host:1080"`
-> (или `http://host:8080`). После изменения конфига — `proxygo restart`.
+> уровне ISP/региона) — укажи **HTTP/SOCKS прокси или VPN** в конфиге:
+> `telegram.proxy: "socks5://host:1080"` (или `http://host:8080`). MTProto-прокси для
+> Bot API не работает (он только для клиента-мессенджера). После изменения — `proxygo restart`.
 
 ```
 /start                     список команд
