@@ -25,6 +25,7 @@ proxygo-mc-agent/target/
 # Local notes / docs
 ARCHITECTURE.md
 proxy.md
+proxygo-mc-agent/README.md
 
 # OS / editors
 .DS_Store
