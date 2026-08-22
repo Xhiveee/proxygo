@@ -142,6 +142,11 @@ pkg/ppv2            сборка/парсинг PROXY v2 заголовка
 сетевого менеджера Minecraft, читает PPv2 заголовок и подменяет remote address
 соединения. Не требует плагинов/модов/конфиг-файлов.
 
+> ⚠️ **Где работает:** агент ставится на **бэкенд-серверы Minecraft в Германии**
+> (к каждому отдельно), а **не** на РФ-сервер, где крутится proxygo. На
+> российском VDS достаточно собрать jar и потом скопировать/скачать его на
+> каждый немецкий сервер, положив в директорию этого сервера.
+
 ### Сборка
 
 ```bash
@@ -150,10 +155,14 @@ mvn clean package
 # → target/proxygo-mc-agent.jar (fat-jar, javassist зашит внутрь)
 ```
 
-### Запуск
+### Установка на каждый сервер в Германии
+
+1. Собери jar (локально или на РФ-VDS через `proxygo build`).
+2. Скопируй `target/proxygo-mc-agent.jar` на немецкий сервер, в директорию сервера.
+3. Добавь агент в запуск:
 
 ```bash
-java -javaagent:proxygo-mc-agent/target/proxygo-mc-agent.jar -jar server.jar nogui
+java -javaagent:/путь/к/своему/серверу/proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
 Мониторинг в консоли: строки с префиксом `[proxygo-agent]`.

@@ -1,22 +1,30 @@
 # proxygo-mc-agent
 
-Java-агент для ванильного Minecraft-сервера (или любого ядра), который читает
-HAProxy PROXY v2 заголовок и подменяет remote address соединения реальным IP
-игрока. Без плагинов, модов и конфигов.
+Java-агент для **бэкенд-серверов Minecraft в Германии** (не для РФ-сервера с
+proxygo). Читает HAProxy PROXY v2 заголовок и подменяет remote address
+соединения реальным IP игрока. Без плагинов, модов и конфигов. Ставится
+**отдельно на каждый немецкий сервер** — jar копируется в директорию этого
+сервера.
+
+> ⚠️ Агент работает на каждом бэкенд-сервере Minecraft (в Германии), а сам
+> proxygo (Go) — на сервере в РФ. На РФ-сервере лишь собирается этот jar.
 
 ## Сборка
 
-Требуется JDK 8+ и Maven 3.6+.
+Требуется JDK 8+ и Maven 3.6+ (на РФ-сервере это делает `proxygo build`).
 
 ```bash
 mvn clean package
 # → target/proxygo-mc-agent.jar (fat-jar)
 ```
 
-## Запуск
+## Установка на сервер Minecraft (в Германии)
+
+1. Скопируй `target/proxygo-mc-agent.jar` на немецкий сервер в директорию сервера.
+2. Добавь агент в запуск:
 
 ```bash
-java -javaagent:target/proxygo-mc-agent.jar -jar server.jar nogui
+java -javaagent:/путь/к/серверу/proxygo-mc-agent.jar -jar server.jar nogui
 ```
 
 Логи пишутся в stdout с префиксом `[proxygo-agent]`:

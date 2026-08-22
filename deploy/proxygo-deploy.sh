@@ -238,11 +238,15 @@ ${B}  Токен Telegram${R}
     Укажи токен и admin_ids в $INSTALL_DIR/config.yaml, поставь
     'disabled: false' и перезапусти: ${B}proxygo restart${R}
 
-${B}  Запуск Java-агента на сервере Minecraft (бэкенд в Германии)${R}
-    агент - это собранный jar (см. выше), для запуска укажи его путь:
-        ${B}java -javaagent:$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar -jar server.jar nogui${R}
-    Агент должен работать на бэкенде-сервере Minectaft (VDS в Германии),
-    к которому проксирует TCP-трафик proxygo.
+${B}  Java-агент для серверов Minecraft в ГЕРМАНИИ (не на этом VDS)${R}
+    Агент НЕ запускается на этом (РФ) сервере с proxygo.
+    Он ставится на КАЖДЫЙ бэкенд-сервер Minecraft в Германии:
+    скачай/скопируй собранный jar на каждый такой сервер и положи
+    его В ДИРЕКТОРИЮ ЭТОГО СЕРВЕРА, затем добавь в запуск:
+        ${B}java -javaagent:/путь/к/серверу/proxygo-mc-agent.jar -jar server.jar nogui${R}
+    Готовый jar лежит здесь (можно забрать скопировать с этого сервера):
+        ${B}$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar${R}
+    Для каждого немецкого сервера копируй этот jar в его директорию.
 
 ${B}  Включённые порты${R}
     TCP/UDP бэкендов задаются командами Telegram (например /add survival 25565 ...).
