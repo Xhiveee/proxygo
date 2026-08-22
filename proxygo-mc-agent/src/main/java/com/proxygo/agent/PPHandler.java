@@ -118,10 +118,13 @@ public final class PPHandler {
             } catch (RuntimeException e) {
                 PPAgent.log("could not substitute address: " + e.getMessage());
             }
+        } else {
+            PPAgent.log("PPv2 header consumed but no substitution (cmd=" + command + ", family=" + family + ")");
         }
 
         buf.skipBytes(headerLen);
         markDone(ctx);
+        PPAgent.log("PPv2 header consumed and stripped (" + headerLen + " bytes)");
     }
 
     // ----- signature / address reading -------------------------------------

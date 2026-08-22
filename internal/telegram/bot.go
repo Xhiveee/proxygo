@@ -5,6 +5,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -76,9 +77,14 @@ func (b *Bot) Start(ctx context.Context) error {
 			return fmt.Errorf("telegram proxy parse: %w", perr)
 		}
 		client := &http.Client{
-			Timeout: 20 * time.Second,
+			// No overall timeout: Telegram getUpdates long-poll can block for the
+			// whole poll timeout. Only cap the connect so an unreachable network
+			// fails fast instead of hanging.
 			Transport: &http.Transport{
 				Proxy: http.ProxyURL(proxyURL),
+				DialContext: (&net.Dialer{
+					Timeout: 15 * time.Second, KeepAlive: 30 * time.Second,
+				}).DialContext,
 			},
 		}
 		api, err = tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, client)

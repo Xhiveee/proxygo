@@ -93,6 +93,9 @@ public class PPTransformer implements ClassFileTransformer {
             }
             return true;
         }
+        PPAgent.log("candidate matched but NO incomg method (" + cc.getName()
+            + "); tried " + String.join(",", INBOUND_METHODS)
+            + ". Версия сервера может не совпадать с этим трансформером.");
         return false;
     }
 
