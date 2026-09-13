@@ -3,8 +3,11 @@
 ## Что это
 
 `proxygo` — гибридный TCP/UDP-прокси для Minecraft на Go с Telegram-админкой
-и состоянием в SQLite. Трафик форвардится **прозрачно**: бэкенд видит IP
-прокси, а не реальный IP игрока.
+и состоянием в SQLite. TCP поддерживает три режима форвардинга
+(`Backend.ForwardMode`): `raw` (прозрачная труба), `bungee` (переписывает
+MC-handshake: `host\0IP\0UUID` — реальный IP игрока на Spigot/Paper с
+`bungeecord: true`) и `ppv2` (PROXY v2 заголовок для Paper/Velocity).
+UDP — всегда прозрачно.
 
 ## Сборка и проверка
 
@@ -12,10 +15,8 @@
 go build -trimpath -ldflags="-s -w" -o proxygo ./cmd/proxygo   # бинарь
 go vet ./...                                                  # линт/проверка
 go build ./...                                                # сборка всех пакетов
+go test ./...                                                 # юнит + e2e (internal/proxy, pkg/mcproto)
 ```
-
-Тестов нет. Проверка изменений: `go build ./... && go vet ./...`, для
-сетевых правок — ручной прогон (см. ниже).
 
 ## Ручная проверка прокси
 
@@ -33,10 +34,12 @@ internal/config     YAML-конфиг + валидация + backend-whitelist
 internal/logging    slog (json/console) + access-логи + канал уведомлений
 internal/metrics    атомарные счётчики + per-IP окна для DDoS-детекта
 internal/model      общие типы (Backend, Ban, StatPoint, AuditEntry)
-internal/proxy      Manager + Backend (TCP pipe + UDP-сессии + drain)
+internal/proxy      Manager + Backend (TCP pipe + UDP-сессии + drain + preamble)
 internal/security   баны (SQLite + best-effort iptables) + token-bucket limiter
 internal/storage    SQLite (modernc.org/sqlite, без CGO) + embed-миграции
 internal/telegram   бот: long-polling, команды, inline-кнопки
+pkg/mcproto         MC-протокол: frame-reader, handshake, login-start, offline-UUID
+pkg/ppv2            сборка/парсинг PROXY v2 заголовка
 deploy/             proxygo-deploy.sh (установщик), proxygo-build.sh,
                     proxygo (CLI-обёртка над systemd), proxygo.service
 ```
@@ -44,8 +47,9 @@ deploy/             proxygo-deploy.sh (установщик), proxygo-build.sh,
 ## Ключевые архитектурные решения
 
 - **TCP**: `Backend.handleConn` — ban-check → per-IP лимит → DDoS-окно →
-  dial backend → два `pipe`-горутина (client↔backend). `countConn` считает
-  байты и продлевает idle-дедлайн на каждом read/write.
+  dial backend → `forwardPreamble` (raw/bungee/ppv2 по `forward_mode`) →
+  два `pipe`-горутина (client↔backend). `countConn` считает байты и
+  продлевает idle-дедлайн на каждом read/write. TCP_NODELAY на обоих сокетах.
 - **UDP**: `UDPForwarder` — одна listening-точка; на каждый client IP:port —
   сессия с отдельным ephemeral upstream-сокетом (unconnected, не DialUDP —
   обход quirk'ов Windows/loopback). Сессии протухают по `udp_session_timeout`.
@@ -73,6 +77,22 @@ deploy/             proxygo-deploy.sh (установщик), proxygo-build.sh,
 Единый CLI — `/usr/local/bin/proxygo` (`start|stop|restart|status|logs|
 backends|bans|stats|config|build|update|remove`).
 
+## Ключевые инварианты форвардинга
+
+- `forwardPreamble` (internal/proxy/proxy.go) отрабатывает ДО старта pipe'ов.
+  Ошибка преамбулы = фатально для коннекта.
+- `bungee`: читаем handshake → intent==2 (login) → читаем login-start → ник →
+  offline-UUID (`md5("OfflinePlayer:"+name)`, v3) → host+`\0`+IP+`\0`+UUID.
+  UUID совпадает с тем, что offline-сервер посчитал бы сам → идентичность
+  игрока сохраняется. Online-mode сервера spoofedUUID игнорируют — безопасно.
+- **Фолбэк в raw — обязателен**: любой не-MC/неполный пакет → реплеем сырые
+  фреймы и прозрачный pipe. Никогда не ломать коннект из-за парсинга.
+- `ppv2` — только если бэкенд понимает PROXY v2 нативно (Paper
+  `proxies.proxy-protocol: true`, Velocity). На голом vanilla/Spigot
+  сломает handshake — именно поэтому раньше «не проксировалось».
+- `mcproto.ReadFrame` читает ровно один фрейм без буферизации — conn
+  остаётся валидным для последующего pipe().
+
 ## Важно: история с Java-агентом
 
 Раньше проект включал `proxygo-mc-agent` (Java-агент на Javassist) и
@@ -80,6 +100,6 @@ backends|bans|stats|config|build|update|remove`).
 реальный IP игрока. Это была логическая ловушка: **без агента на бэкенде
 PPv2-заголовок ломал Minecraft-handshake** — первые байты соединения были
 `\r\n\r\n\x00\r\nQUIT\n` вместо MC-пакета, и трафик фактически не
-проксировался. Агент и `pkg/ppv2` удалены; прокси теперь честно
-транспарентный. Не возвращать PPv2 без механизма на стороне бэкенда,
-который его снимает.
+проксировался. Агент удалён; вместо него — protocol-aware режимы
+`bungee`/`ppv2` (per-backend, `/forward`), требующие лишь настройки на
+стороне сервера, без jar'ов.

@@ -1,7 +1,9 @@
 // Package proxy implements the hybrid TCP/UDP forwarding layer for the
-// MC hybrid proxy. TCP connections are forwarded transparently; the backend
-// sees the proxy's address as the peer. UDP is forwarded transparently with
-// session mapping keyed by client IP:port.
+// MC hybrid proxy. TCP connections support three forwarding modes
+// (Backend.ForwardMode): "raw" pipes bytes transparently, "bungee" rewrites
+// the Minecraft handshake to carry the real client IP in BungeeCord format,
+// and "ppv2" prepends a PROXY protocol v2 header. UDP is forwarded
+// transparently with session mapping keyed by client IP:port.
 package proxy
 
 import (
@@ -16,6 +18,8 @@ import (
 	"proxygo/internal/logging"
 	"proxygo/internal/metrics"
 	"proxygo/internal/model"
+	"proxygo/pkg/mcproto"
+	"proxygo/pkg/ppv2"
 )
 
 // Storage is the persistence surface the proxy layer needs.
@@ -316,6 +320,20 @@ func (b *Backend) handleConn(conn net.Conn) {
 	}
 	b.dialFail.Store(0)
 
+	setNoDelay(conn)
+	setNoDelay(backend)
+
+	// Protocol-aware preamble according to forward_mode: bungee rewrites the
+	// handshake (real IP), ppv2 prepends a PROXY header, raw is a no-op.
+	if err := b.forwardPreamble(raddr, conn, backend); err != nil {
+		b.metrics.ErrWrite.Add(1)
+		b.log.Warn("forward preamble failed", "backend", b.Name(),
+			"client", clientIP, "mode", b.model.ForwardMode, "err", err)
+		conn.Close()
+		backend.Close()
+		return
+	}
+
 	b.active.Add(1)
 	b.connTotal.Add(1)
 	b.metrics.IncConnection(clientIP)
@@ -359,6 +377,107 @@ func (b *Backend) handleConn(conn net.Conn) {
 	}()
 }
 
+// forwardPreamble runs the forwarding-mode handshake before the pipe starts.
+// A returned error is fatal for the connection.
+func (b *Backend) forwardPreamble(raddr *net.TCPAddr, client, backend net.Conn) error {
+	switch b.model.ForwardMode {
+	case model.ForwardPPv2:
+		return b.writePPv2(raddr, backend)
+	case model.ForwardBungee:
+		return b.forwardBungee(raddr, client, backend)
+	default:
+		return nil
+	}
+}
+
+// handshakeReadTimeout bounds how long we wait for the client's first
+// packets in bungee mode before giving up on the connection.
+const handshakeReadTimeout = 10 * time.Second
+
+// forwardBungee implements BungeeCord-style IP forwarding: the handshake's
+// server-address field is rewritten to "<host>\x00<client ip>\x00<uuid>".
+// The UUID is the offline-mode UUID derived from the username in the
+// login-start packet, so the backend assigns the player exactly the same
+// identity it would have assigned on a direct connection. Status pings and
+// non-MC traffic fall back to transparent forwarding.
+func (b *Backend) forwardBungee(raddr *net.TCPAddr, client, backend net.Conn) error {
+	_ = client.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+
+	f, err := mcproto.ReadFrame(client)
+	if err != nil {
+		return err
+	}
+	hs, err := mcproto.ParseHandshake(f)
+	if err != nil || hs.Intent != 2 {
+		// Status ping or foreign protocol: replay verbatim, pipe the rest.
+		_, err := backend.Write(f.Raw)
+		return err
+	}
+
+	lf, err := mcproto.ReadFrame(client)
+	if err != nil {
+		return err
+	}
+	name, err := mcproto.ParseLoginName(lf)
+	if err != nil {
+		// Unparseable login start: replay both frames verbatim.
+		if _, werr := backend.Write(f.Raw); werr != nil {
+			return werr
+		}
+		_, werr := backend.Write(lf.Raw)
+		return werr
+	}
+
+	forwarded := hs.Host + "\x00" + raddr.IP.String() + "\x00" + mcproto.OfflineUUID(name)
+	if _, err := backend.Write(mcproto.MarshalHandshake(hs, forwarded).Raw); err != nil {
+		return err
+	}
+	if _, err := backend.Write(lf.Raw); err != nil {
+		return err
+	}
+	b.log.Debug("bungee ip forwarded", "backend", b.Name(),
+		"client", raddr.IP.String(), "player", name)
+	return nil
+}
+
+// writePPv2 sends a PROXY v2 header for the client address before any data.
+// Requires a backend that understands PPv2 natively (e.g. Paper with
+// proxies.proxy-protocol: true, or Velocity).
+func (b *Backend) writePPv2(raddr *net.TCPAddr, backend net.Conn) error {
+	host, portStr := splitHostPort(b.model.BackendTCP)
+	dport, _ := parsePort(portStr)
+	hdr := ppv2.Header{
+		Command:    ppv2.CommandProxy,
+		Family:     familyFor(raddr.IP),
+		Protocol:   ppv2.ProtocolStream,
+		SourceAddr: raddr.IP,
+		SourcePort: uint16(raddr.Port),
+		DestAddr:   net.ParseIP(host),
+		DestPort:   dport,
+	}
+	if !hdr.Valid() {
+		// fall back to unspecified family (no address block) if dest/host missing
+		hdr.Family = ppv2.FamilyUnspec
+		hdr.SourceAddr, hdr.DestAddr, hdr.SourcePort, hdr.DestPort = nil, nil, 0, 0
+	}
+	hdrBytes, err := hdr.Marshal()
+	if err != nil {
+		return err
+	}
+	if _, err := backend.Write(hdrBytes); err != nil {
+		return err
+	}
+	b.log.Info("ppv2 header sent", "backend", b.Name(), "client", raddr.IP.String(),
+		"target", b.model.BackendTCP, "hdr_len", len(hdrBytes))
+	return nil
+}
+
+func setNoDelay(c net.Conn) {
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
+}
+
 func (b *Backend) notifyDDoS(ip, proto string) {
 	now := time.Now().Unix()
 	last := b.lastDDOS.Load()
@@ -375,3 +494,29 @@ func (b *Backend) notifyDDoS(ip, proto string) {
 // cfgDialAlertThreshold is the number of consecutive dial failures before
 // alerting once. Not configurable to keep the surface small.
 const cfgDialAlertThreshold = 3
+
+func familyFor(ip net.IP) byte {
+	if ip.To4() != nil {
+		return ppv2.FamilyINET
+	}
+	return ppv2.FamilyINET6
+}
+
+func splitHostPort(hostport string) (host, port string) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return hostport, "0"
+	}
+	return host, port
+}
+
+func parsePort(s string) (uint16, error) {
+	var n uint16
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, errors.New("invalid port")
+		}
+		n = n*10 + uint16(c-'0')
+	}
+	return n, nil
+}

@@ -4,19 +4,36 @@ package model
 
 import "time"
 
+// TCP forwarding modes (Backend.ForwardMode).
+const (
+	ForwardRaw    = "raw"    // transparent pipe
+	ForwardBungee = "bungee" // BungeeCord-style handshake IP forwarding
+	ForwardPPv2   = "ppv2"   // PROXY protocol v2 header
+)
+
+// ValidForwardMode reports whether s is a supported forwarding mode.
+func ValidForwardMode(s string) bool {
+	switch s {
+	case ForwardRaw, ForwardBungee, ForwardPPv2:
+		return true
+	}
+	return false
+}
+
 // Backend is a single proxied destination. TCP always has a listener; UDP is
 // optional per backend.
 type Backend struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	ListenPort int   `json:"listen_port"`      // TCP listen port
-	BackendTCP string `json:"backend_tcp"`     // host:port
-	UDPEnabled bool  `json:"udp_enabled"`
-	UDPPort   int    `json:"udp_port"`         // UDP listen port (0 = disabled)
-	BackendUDP string `json:"backend_udp"`     // host:port
-	Enabled   bool   `json:"enabled"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	ListenPort  int    `json:"listen_port"`  // TCP listen port
+	BackendTCP  string `json:"backend_tcp"`  // host:port
+	ForwardMode string `json:"forward_mode"` // raw | bungee | ppv2
+	UDPEnabled  bool   `json:"udp_enabled"`
+	UDPPort     int    `json:"udp_port"`    // UDP listen port (0 = disabled)
+	BackendUDP  string `json:"backend_udp"` // host:port
+	Enabled     bool   `json:"enabled"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
 }
 
 // Ban is a banned client IP.

@@ -92,15 +92,15 @@ func (s *Store) Close() error { return s.db.Close() }
 
 // ---------- backends -------------------------------------------------------
 
-const backendCols = `id, name, listen_port, backend_tcp, udp_enabled, udp_port,
-	backend_udp, enabled, created_at, updated_at`
+const backendCols = `id, name, listen_port, backend_tcp, forward_mode,
+	udp_enabled, udp_port, backend_udp, enabled, created_at, updated_at`
 
 // AddBackend inserts a new backend and returns its id.
 func (s *Store) AddBackend(b *model.Backend) (int64, error) {
 	res, err := s.db.Exec(`INSERT INTO backends
-		(name, listen_port, backend_tcp, udp_enabled, udp_port, backend_udp, enabled, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?)`,
-		b.Name, b.ListenPort, b.BackendTCP, b.UDPEnabled, b.UDPPort, b.BackendUDP, b.Enabled,
+		(name, listen_port, backend_tcp, forward_mode, udp_enabled, udp_port, backend_udp, enabled, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		b.Name, b.ListenPort, b.BackendTCP, b.ForwardMode, b.UDPEnabled, b.UDPPort, b.BackendUDP, b.Enabled,
 		time.Now().Unix(), time.Now().Unix())
 	if err != nil {
 		return 0, err
@@ -146,12 +146,19 @@ func (s *Store) GetBackendByName(name string) (*model.Backend, error) {
 
 func scanBackend(sc interface{ Scan(...any) error }) (*model.Backend, error) {
 	var b model.Backend
-	err := sc.Scan(&b.ID, &b.Name, &b.ListenPort, &b.BackendTCP, &b.UDPEnabled, &b.UDPPort,
-		&b.BackendUDP, &b.Enabled, &b.CreatedAt, &b.UpdatedAt)
+	err := sc.Scan(&b.ID, &b.Name, &b.ListenPort, &b.BackendTCP, &b.ForwardMode,
+		&b.UDPEnabled, &b.UDPPort, &b.BackendUDP, &b.Enabled, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &b, nil
+}
+
+// UpdateBackendForwardMode sets the TCP forwarding mode of a backend.
+func (s *Store) UpdateBackendForwardMode(id int64, mode string) error {
+	_, err := s.db.Exec(`UPDATE backends SET forward_mode=?, updated_at=? WHERE id=?`,
+		mode, time.Now().Unix(), id)
+	return err
 }
 
 // UpdateBackendUDP attaches a UDP listener to a backend.

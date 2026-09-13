@@ -17,6 +17,7 @@ import (
 
 	"proxygo/internal/config"
 	"proxygo/internal/logging"
+	"proxygo/internal/model"
 	"proxygo/internal/proxy"
 	"proxygo/internal/security"
 	"proxygo/internal/storage"
@@ -24,11 +25,11 @@ import (
 
 // Bot wires the long-polling Telegram API to the proxy Manager.
 type Bot struct {
-	api  *tgbotapi.BotAPI
-	cfg  *config.Config
-	log  *logging.Logger
-	mgr  *proxy.Manager
-	bans *security.Bans
+	api   *tgbotapi.BotAPI
+	cfg   *config.Config
+	log   *logging.Logger
+	mgr   *proxy.Manager
+	bans  *security.Bans
 	store *storage.Store
 
 	limiter *security.Limiter
@@ -41,14 +42,14 @@ type Bot struct {
 func NewBot(cfg *config.Config, log *logging.Logger, mgr *proxy.Manager,
 	bans *security.Bans, store *storage.Store) *Bot {
 	return &Bot{
-		cfg:      cfg,
-		log:      log,
-		mgr:      mgr,
-		bans:     bans,
-		store:    store,
-		limiter:  security.NewLimiter(cfg.Telegram.RateLimitPerMin, time.Minute),
-		notifCh:  make(chan string, 256),
-		done:     make(chan struct{}),
+		cfg:     cfg,
+		log:     log,
+		mgr:     mgr,
+		bans:    bans,
+		store:   store,
+		limiter: security.NewLimiter(cfg.Telegram.RateLimitPerMin, time.Minute),
+		notifCh: make(chan string, 256),
+		done:    make(chan struct{}),
 	}
 }
 
@@ -200,6 +201,8 @@ func (b *Bot) dispatch(msg *tgbotapi.Message) {
 		b.cmdAddUDP(msg, args)
 	case "/remove-udp":
 		b.cmdRemoveUDP(msg, args)
+	case "/forward":
+		b.cmdForward(msg, args)
 	case "/stats":
 		b.cmdStats(msg, args)
 	case "/ban":
@@ -232,9 +235,13 @@ func (b *Bot) cmdList(msg *tgbotapi.Message) {
 		if m.UDPEnabled {
 			udp = fmt.Sprintf("%d→%s", m.UDPPort, m.BackendUDP)
 		}
+		mode := ""
+		if m.ForwardMode != "" && m.ForwardMode != model.ForwardRaw {
+			mode = "·" + m.ForwardMode
+		}
 		sb.WriteString(fmt.Sprintf(
 			"<code>%-3d %-8s %-24s %-14s %-5d %-7s %-8s</code>\n",
-			m.ID, m.Name, fmt.Sprintf("%d→%s", m.ListenPort, m.BackendTCP), udp,
+			m.ID, m.Name, fmt.Sprintf("%d→%s%s", m.ListenPort, m.BackendTCP, mode), udp,
 			bk.ActiveConns(), shortUptime(time.Since(bk.StartedAt())), humanBytes(bkStatsTx(bk)),
 		))
 	}
@@ -327,6 +334,21 @@ func (b *Bot) cmdRemoveUDP(msg *tgbotapi.Message, args []string) {
 	}
 	_ = b.store.RecordAudit(msg.From.ID, "/remove-udp", args[0])
 	b.send(msg, "✅ UDP отключен у <b>"+args[0]+"</b>")
+}
+
+func (b *Bot) cmdForward(msg *tgbotapi.Message, args []string) {
+	if len(args) != 2 {
+		b.send(msg, "Формат: <code>/forward &lt;name&gt; &lt;raw|bungee|ppv2&gt;</code>\n"+
+			"bungee — реальный IP через handshake (Spigot/Paper: bungeecord=true)\n"+
+			"ppv2 — PROXY v2 (Paper: proxies.proxy-protocol=true)")
+		return
+	}
+	if err := b.mgr.SetForwardMode(args[0], args[1]); err != nil {
+		b.send(msg, "❌ "+err.Error())
+		return
+	}
+	_ = b.store.RecordAudit(msg.From.ID, "/forward", args[0]+" "+args[1])
+	b.send(msg, "✅ Режим форвардинга для <b>"+args[0]+"</b>: "+args[1])
 }
 
 func (b *Bot) cmdStats(msg *tgbotapi.Message, args []string) {
@@ -437,7 +459,7 @@ func (b *Bot) formatBackendStats(bk *proxy.Backend) string {
 	in, out, udp, pkts, conns := bk.Stats()
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("📊 <b>%s</b> (#%d)\n", m.Name, m.ID))
-	sb.WriteString(fmt.Sprintf("TCP: <code>%d → %s</code> (%s)\n", m.ListenPort, m.BackendTCP, enabledStr(m.Enabled)))
+	sb.WriteString(fmt.Sprintf("TCP: <code>%d → %s</code> (%s, mode=%s)\n", m.ListenPort, m.BackendTCP, enabledStr(m.Enabled), m.ForwardMode))
 	udpLine := "—"
 	if m.UDPEnabled {
 		udpLine = fmt.Sprintf("<code>%d → %s</code>", m.UDPPort, m.BackendUDP)
@@ -524,6 +546,7 @@ const helpText = `<b>MC Hybrid Proxy Bot</b>
 /remove-udp <b>name</b> — отключить UDP
 /restart <b>name</b> — пересоздать listener
 /remove <b>name|id</b> — удалить
+/forward <b>name mode</b> — режим TCP: raw | bungee | ppv2 (реальный IP)
 
 <b>Статистика</b>
 /stats — общая

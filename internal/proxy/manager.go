@@ -39,6 +39,7 @@ type StoragePersist interface {
 	AddBackend(b *model.Backend) (int64, error)
 	DeleteBackend(id int64) error
 	UpdateBackendUDP(id int64, port int, addr string) error
+	UpdateBackendForwardMode(id int64, mode string) error
 	ClearBackendUDP(id int64) error
 }
 
@@ -166,10 +167,11 @@ func (m *Manager) Add(name string, listenPort int, backendTCP, backendUDP string
 	}
 
 	rec := &model.Backend{
-		Name:       name,
-		ListenPort: listenPort,
-		BackendTCP: backendTCP,
-		Enabled:    true,
+		Name:        name,
+		ListenPort:  listenPort,
+		BackendTCP:  backendTCP,
+		ForwardMode: model.ForwardRaw,
+		Enabled:     true,
 	}
 	if backendUDP != "" {
 		if err := validateUDPAddr(backendUDP); err != nil {
@@ -239,6 +241,24 @@ func (m *Manager) Restart(name string) error {
 		return fmt.Errorf("restart %s: %w", name, err)
 	}
 	m.log.Info("backend restarted", "name", name)
+	return nil
+}
+
+// SetForwardMode changes the TCP forwarding mode of a backend
+// (raw | bungee | ppv2). Applies to new connections only.
+func (m *Manager) SetForwardMode(name, mode string) error {
+	if !model.ValidForwardMode(mode) {
+		return fmt.Errorf("unknown mode %q (want: raw, bungee, ppv2)", mode)
+	}
+	rt, ok := m.Get(name)
+	if !ok {
+		return ErrNotFound
+	}
+	if err := m.store.UpdateBackendForwardMode(rt.Model().ID, mode); err != nil {
+		return err
+	}
+	rt.model.ForwardMode = mode
+	m.log.Info("forward mode changed", "name", name, "mode", mode)
 	return nil
 }
 
