@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -34,8 +35,9 @@ type Bot struct {
 
 	limiter *security.Limiter
 
-	notifCh chan string
-	done    chan struct{}
+	notifCh  chan string
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 // NewBot builds the bot. Call Start to begin polling.
@@ -118,7 +120,7 @@ func (b *Bot) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		api.StopReceivingUpdates()
-		close(b.done)
+		b.doneOnce.Do(func() { close(b.done) })
 	}()
 
 	for {
@@ -135,7 +137,7 @@ func (b *Bot) Start(ctx context.Context) error {
 }
 
 func (b *Bot) notifyLoop() {
-	defer close(b.done)
+	defer b.doneOnce.Do(func() { close(b.done) })
 	for {
 		select {
 		case <-b.done:
