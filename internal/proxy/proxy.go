@@ -382,7 +382,7 @@ func (b *Backend) handleConn(conn net.Conn) {
 func (b *Backend) forwardPreamble(raddr *net.TCPAddr, client, backend net.Conn) error {
 	switch b.model.ForwardMode {
 	case model.ForwardPPv2:
-		return b.writePPv2(raddr, backend)
+		return b.writePPv2(client, backend)
 	case model.ForwardBungee:
 		return b.forwardBungee(raddr, client, backend)
 	default:
@@ -441,24 +441,21 @@ func (b *Backend) forwardBungee(raddr *net.TCPAddr, client, backend net.Conn) er
 }
 
 // writePPv2 sends a PROXY v2 header for the client address before any data.
-// Requires a backend that understands PPv2 natively (e.g. Paper with
-// proxies.proxy-protocol: true, or Velocity).
-func (b *Backend) writePPv2(raddr *net.TCPAddr, backend net.Conn) error {
-	host, portStr := splitHostPort(b.model.BackendTCP)
-	dport, _ := parsePort(portStr)
-	hdr := ppv2.Header{
-		Command:    ppv2.CommandProxy,
-		Family:     familyFor(raddr.IP),
-		Protocol:   ppv2.ProtocolStream,
-		SourceAddr: raddr.IP,
-		SourcePort: uint16(raddr.Port),
-		DestAddr:   net.ParseIP(host),
-		DestPort:   dport,
-	}
-	if !hdr.Valid() {
-		// fall back to unspecified family (no address block) if dest/host missing
+// Source = the real client, Dest = the proxy address the client connected
+// to — both taken from the live socket so hostname backends and IPv4/IPv6
+// always produce a valid header. Requires a backend that understands PPv2
+// natively (Velocity haproxy-protocol=true, Paper proxy-protocol=true).
+func (b *Backend) writePPv2(client, backend net.Conn) error {
+	src, _ := client.RemoteAddr().(*net.TCPAddr)
+	dst, _ := client.LocalAddr().(*net.TCPAddr)
+
+	hdr := ppv2.Header{Command: ppv2.CommandProxy, Protocol: ppv2.ProtocolStream}
+	if src != nil && dst != nil && (src.IP.To4() != nil) == (dst.IP.To4() != nil) {
+		hdr.Family = familyFor(src.IP)
+		hdr.SourceAddr, hdr.SourcePort = src.IP, uint16(src.Port)
+		hdr.DestAddr, hdr.DestPort = dst.IP, uint16(dst.Port)
+	} else {
 		hdr.Family = ppv2.FamilyUnspec
-		hdr.SourceAddr, hdr.DestAddr, hdr.SourcePort, hdr.DestPort = nil, nil, 0, 0
 	}
 	hdrBytes, err := hdr.Marshal()
 	if err != nil {
@@ -467,7 +464,11 @@ func (b *Backend) writePPv2(raddr *net.TCPAddr, backend net.Conn) error {
 	if _, err := backend.Write(hdrBytes); err != nil {
 		return err
 	}
-	b.log.Info("ppv2 header sent", "backend", b.Name(), "client", raddr.IP.String(),
+	clientIP := "?"
+	if src != nil {
+		clientIP = src.IP.String()
+	}
+	b.log.Info("ppv2 header sent", "backend", b.Name(), "client", clientIP,
 		"target", b.model.BackendTCP, "hdr_len", len(hdrBytes))
 	return nil
 }
@@ -500,23 +501,4 @@ func familyFor(ip net.IP) byte {
 		return ppv2.FamilyINET
 	}
 	return ppv2.FamilyINET6
-}
-
-func splitHostPort(hostport string) (host, port string) {
-	host, port, err := net.SplitHostPort(hostport)
-	if err != nil {
-		return hostport, "0"
-	}
-	return host, port
-}
-
-func parsePort(s string) (uint16, error) {
-	var n uint16
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, errors.New("invalid port")
-		}
-		n = n*10 + uint16(c-'0')
-	}
-	return n, nil
 }

@@ -124,26 +124,36 @@ func TestForwardBungeeStatusPingPassthrough(t *testing.T) {
 
 func TestWritePPv2(t *testing.T) {
 	b := testBackend(t, model.ForwardPPv2)
-	_, srvB := net.Pipe()
-	srvA, srvB2 := net.Pipe()
-	defer srvB.Close()
-	defer srvB2.Close()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	cli, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	srv, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
 
-	raddr := &net.TCPAddr{IP: net.ParseIP("203.0.113.7"), Port: 54321}
 	errCh := make(chan error, 1)
-	go func() { errCh <- b.writePPv2(raddr, srvA) }()
+	go func() { errCh <- b.writePPv2(cli, srv) }()
 
 	buf := make([]byte, 28)
-	_ = srvB2.SetReadDeadline(time.Now().Add(3 * time.Second))
-	if _, err := readFull(srvB2, buf); err != nil {
+	_ = cli.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := readFull(cli, buf); err != nil {
 		t.Fatalf("read ppv2: %v", err)
 	}
 	sig := []byte{0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A}
 	if !bytes.Equal(buf[:12], sig) {
 		t.Fatalf("no ppv2 signature: %x", buf[:12])
 	}
-	// source IP must be inside the header
-	if !strings.Contains(string(buf[16:28]), string([]byte{203, 0, 113, 7})) {
+	// IPv4 header must carry the real client source address (127.0.0.1).
+	if !strings.Contains(string(buf[16:28]), string([]byte{127, 0, 0, 1})) {
 		t.Fatalf("client ip missing: %x", buf)
 	}
 	if err := <-errCh; err != nil {
