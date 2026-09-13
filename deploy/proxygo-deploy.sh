@@ -8,10 +8,9 @@
 #
 # What it does:
 #   * clones the project into /opt/proxygo
-#   * installs Go, a JDK and Maven *locally inside the project* (/opt/proxygo/.tool)
+#   * installs Go *locally inside the project* (/opt/proxygo/.tool)
 #     so nothing is installed system-wide for compilation
 #   * compiles the Go proxy -> /opt/proxygo/bin/proxygo
-#   * compiles the Java agent  -> /opt/proxygo/proxygo-mc-agent/target/proxygo-mc-agent.jar
 #   * asks for the Telegram bot token / admin IDs (skippable -> manual config)
 #   * installs a systemd unit + the 'proxygo' management CLI and (re)starts it
 #
@@ -19,8 +18,6 @@
 #   PROXYGO_REPO        repo to clone (default the HTTPS URL; use git@ for SSH)
 #   PROXYGO_BRANCH      branch (default main)
 #   PROXYGO_GO_VERSION  Go version override
-#   PROXYGO_JDK_VERSION JDK version override (default 21)
-#   PROXYGO_MAVEN_VERSION Maven version override (default 3.9.9)
 #   PROXYGO_HOME        install dir (default /opt/proxygo)
 
 set -euo pipefail
@@ -30,8 +27,6 @@ INSTALL_DIR="${PROXYGO_HOME:-/opt/proxygo}"
 REPO="${PROXYGO_REPO:-https://github.com/Xhiveee/proxygo.git}"
 BRANCH="${PROXYGO_BRANCH:-main}"
 GO_VERSION="${PROXYGO_GO_VERSION:-}"        # empty -> auto-latest
-JDK_VERSION="${PROXYGO_JDK_VERSION:-21}"
-MAVEN_VERSION="${PROXYGO_MAVEN_VERSION:-3.9.9}"
 BIN="$INSTALL_DIR/bin"
 TOOL="$INSTALL_DIR/.tool"
 
@@ -53,12 +48,12 @@ need_root() {
 
 detect_arch() {
     case "$(uname -m)" in
-        x86_64|amd64)  ARCH=amd64;  JARCH=x64 ;;
-        aarch64|arm64) ARCH=arm64;  JARCH=aarch64 ;;
-        armv7l|armhf)  ARCH=armv6l; JARCH=arm ;;
+        x86_64|amd64)  ARCH=amd64 ;;
+        aarch64|arm64) ARCH=arm64 ;;
+        armv7l|armhf)  ARCH=armv6l ;;
         *) die "unsupported arch $(uname -m)" ;;
     esac
-    log "arch: $(uname -m) -> go=$ARCH jdk=$JARCH"
+    log "arch: $(uname -m) -> go=$ARCH"
 }
 
 ensure_basics() {
@@ -98,30 +93,6 @@ install_go() {
     ok "Go $ver installed"
 }
 
-install_maven() {
-    if [ -x "$TOOL/maven/bin/mvn" ]; then log "Maven already installed"; return; fi
-    info "installing Maven $MAVEN_VERSION (project-local: $TOOL/maven)"
-    local url="https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz"
-    curl -fsSL "$url" -o /tmp/mvn.tgz || die "Maven download failed"
-    mkdir -p "$TOOL/maven.tmp"
-    tar -C "$TOOL/maven.tmp" -xzf /tmp/mvn.tgz
-    mv "$TOOL/maven.tmp"/* "$TOOL/maven"
-    rm -rf "$TOOL/maven.tmp"
-    ok "Maven $MAVEN_VERSION installed"
-}
-
-install_jdk() {
-    if [ -x "$TOOL/jdk/bin/java" ]; then log "JDK already installed"; return; fi
-    info "installing Temurin JDK $JDK_VERSION (project-local: $TOOL/jdk)"
-    local url="https://api.adoptium.net/v3/binary/latest/${JDK_VERSION}/ga/linux/${JARCH}/jdk/hotspot/normal/eclipse"
-    curl -fsSL "$url" -o /tmp/jdk.tgz || { curl -fsSL "$url" -o /tmp/jdk.tgz || die "JDK download failed"; }
-    mkdir -p "$TOOL/jdk.tmp"
-    tar -C "$TOOL/jdk.tmp" -xzf /tmp/jdk.tgz
-    mv "$TOOL/jdk.tmp"/* "$TOOL/jdk"
-    rm -rf "$TOOL/jdk.tmp"
-    ok "JDK $JDK_VERSION installed"
-}
-
 build_sources() {
     mkdir -p "$BIN" "$INSTALL_DIR/data" "$INSTALL_DIR/log/access" "$INSTALL_DIR/run"
 
@@ -132,17 +103,6 @@ build_sources() {
         ok "Go proxy -> $BIN/proxygo"
     else
         warn_go=1
-    fi
-
-    if [ -x "$TOOL/maven/bin/mvn" ] && [ -x "$TOOL/jdk/bin/java" ]; then
-        info "compiling Java agent ..."
-        export JAVA_HOME="$TOOL/jdk" PATH="$TOOL/jdk/bin:$TOOL/maven/bin:$PATH"
-        ( cd "$INSTALL_DIR/proxygo-mc-agent" && mvn -q -Dmaven.test.skip=true clean package )
-        local jar="$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar"
-        [ -f "$jar" ] || { info "Java agent build did not produce $jar"; warn_agent=1; return 0; }
-        ok "Java agent -> $jar"
-    else
-        warn_agent=1
     fi
 }
 
@@ -216,10 +176,9 @@ ${B}  proxygo — установлен${R}
 ${GRN}============================================================${R}
   Установка      : ${B}$INSTALL_DIR${R}   (systemd: ${B}proxygo.service${R})
   Go-бинарь      : ${B}$BIN/proxygo${R}
-  Java-агент     : ${B}$INSTALL_DIR/proxygo-mc-agent/target/proxygo-mc-agent.jar${R}
   Конфиг         : ${B}$INSTALL_DIR/config.yaml${R}
   Данные          : ${B}$INSTALL_DIR/data/${R}   Логи: ${B}$INSTALL_DIR/log/${R}
-  Тулчейны        : ${B}$TOOL/{go,jdk,maven}${R}   (локально, не глобально)
+  Тулчейн        : ${B}$TOOL/go${R}   (локально, не глобально)
 
 ${B}  Как пользоваться (единый CLI)${R}
 ${C_CYAN}  proxygo start    ${R}  запустить
@@ -231,14 +190,12 @@ ${C_CYAN}  proxygo backends ${R}  список бэкендов (БД)
 ${C_CYAN}  proxygo bans     ${R}  список банов (БД)
 ${C_CYAN}  proxygo stats    ${R}  статистика (БД)
 ${C_CYAN}  proxygo config   ${R}  показать конфиг
-${C_CYAN}  proxygo build    ${R}  перекомпилировать (Go + Java)
+${C_CYAN}  proxygo build    ${R}  перекомпилировать Go-бинарь
 ${C_CYAN}  proxygo update   ${R}  обновить (git pull + build + restart)
 ${C_CYAN}  proxygo remove -y ${R} удалить proxygo
 ${DIM}  Полная справка: proxygo help${R}
 
 ${B}  Telegram${R}   настрой в ${B}$INSTALL_DIR/config.yaml${R} (bot_token, admin_ids, disabled).
-${B}  Java-агент${R}  jar собран — скопируй его на серверы с Minecraft и добавь
-                 в запуск: ${B}java -javaagent:proxygo-mc-agent.jar -jar server.jar nogui${R}
 
 ${GRN}============================================================${R}
 EOF
@@ -250,14 +207,11 @@ detect_arch
 ensure_basics
 ensure_source
 install_go
-install_maven
-install_jdk
 build_sources
 make_config
 install_assets
 
-[ "${warn_go:-0}" = "1" ]    && info "Go build skipped (toolchain missing)"
-[ "${warn_agent:-0}" = "1" ] && info "Java agent build skipped (JDK/Maven missing)"
+[ "${warn_go:-0}" = "1" ] && info "Go build skipped (toolchain missing)"
 
 summary
 log "готово."

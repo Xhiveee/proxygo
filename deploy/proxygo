@@ -14,7 +14,7 @@
 #   bans         list blocked IPs from the database
 #   stats        aggregated traffic per backend (database)
 #   config       show config path + key settings
-#   build        rebuild Go binary + Java agent (local toolchains)
+#   build        rebuild Go binary (local toolchain)
 #   update       git pull + rebuild + restart
 #   remove [-y]  uninstall (stop + delete /opt/proxygo + systemd unit)
 #
@@ -146,7 +146,7 @@ usage() {
         "bans|Список банов (из БД)"
         "stats|Статистика по бэкендам (из БД)"
         "config|Показать конфиг и его путь"
-        "build|Перекомпилировать Go-бинарь + Java-агент"
+        "build|Перекомпилировать Go-бинарь"
         "update|Обновить (git pull + build + restart)"
         "remove [-y]|Удалить proxygo (стоп + удалить /opt + юнит)"
         "help|Эта справка"

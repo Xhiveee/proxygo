@@ -1,7 +1,7 @@
 // Package proxy implements the hybrid TCP/UDP forwarding layer for the
-// MC hybrid proxy. TCP connections get a Proxy Protocol v2 header prepended
-// so the backend Java agent can recover the real client IP. UDP is forwarded
-// transparently with session mapping keyed by client IP:port.
+// MC hybrid proxy. TCP connections are forwarded transparently; the backend
+// sees the proxy's address as the peer. UDP is forwarded transparently with
+// session mapping keyed by client IP:port.
 package proxy
 
 import (
@@ -16,7 +16,6 @@ import (
 	"proxygo/internal/logging"
 	"proxygo/internal/metrics"
 	"proxygo/internal/model"
-	"proxygo/pkg/ppv2"
 )
 
 // Storage is the persistence surface the proxy layer needs.
@@ -317,25 +316,6 @@ func (b *Backend) handleConn(conn net.Conn) {
 	}
 	b.dialFail.Store(0)
 
-	// Build and send the PPv2 header before any data.
-	hdrBytes, herr := b.buildPPv2(raddr)
-	if herr != nil {
-		b.metrics.ErrWrite.Add(1)
-		b.log.Error("ppv2 build failed", "backend", b.Name(), "err", herr)
-		conn.Close()
-		backend.Close()
-		return
-	}
-	if _, err := backend.Write(hdrBytes); err != nil {
-		b.metrics.ErrBackendUp.Add(1)
-		b.log.Warn("write ppv2 to backend failed", "backend", b.Name(), "client", clientIP, "err", err)
-		conn.Close()
-		backend.Close()
-		return
-	}
-	b.log.Info("ppv2 header sent", "backend", b.Name(), "client", clientIP,
-		"target", b.model.BackendTCP, "hdr_len", len(hdrBytes))
-
 	b.active.Add(1)
 	b.connTotal.Add(1)
 	b.metrics.IncConnection(clientIP)
@@ -369,35 +349,14 @@ func (b *Backend) handleConn(conn net.Conn) {
 	go func() {
 		defer b.wg.Done()
 		defer closeBoth()
-		pipe(cw, bw, b.cfg.Proxy.BufferSize) // client -> backend
+		pipe(cw, bw, b.cfg.Proxy.BufferSize) // backend -> client
 	}()
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
 		defer closeBoth()
-		pipe(bw, cw, b.cfg.Proxy.BufferSize) // backend -> client
+		pipe(bw, cw, b.cfg.Proxy.BufferSize) // client -> backend
 	}()
-}
-
-// buildPPv2 produces the PROXY v2 header for the given client address.
-func (b *Backend) buildPPv2(raddr *net.TCPAddr) ([]byte, error) {
-	host, portStr := splitHostPort(b.model.BackendTCP)
-	dport, _ := parsePort(portStr)
-	hdr := ppv2.Header{
-		Command:    ppv2.CommandProxy,
-		Family:     familyFor(raddr.IP),
-		Protocol:   ppv2.ProtocolStream,
-		SourceAddr: raddr.IP,
-		SourcePort: uint16(raddr.Port),
-		DestAddr:   net.ParseIP(host),
-		DestPort:   dport,
-	}
-	if !hdr.Valid() {
-		// fall back to unspecified family (no address block) if dest/host missing
-		hdr.Family = ppv2.FamilyUnspec
-		hdr.SourceAddr, hdr.DestAddr, hdr.SourcePort, hdr.DestPort = nil, nil, 0, 0
-	}
-	return hdr.Marshal()
 }
 
 func (b *Backend) notifyDDoS(ip, proto string) {
@@ -416,29 +375,3 @@ func (b *Backend) notifyDDoS(ip, proto string) {
 // cfgDialAlertThreshold is the number of consecutive dial failures before
 // alerting once. Not configurable to keep the surface small.
 const cfgDialAlertThreshold = 3
-
-func familyFor(ip net.IP) byte {
-	if ip.To4() != nil {
-		return ppv2.FamilyINET
-	}
-	return ppv2.FamilyINET6
-}
-
-func splitHostPort(hostport string) (host, port string) {
-	host, port, err := net.SplitHostPort(hostport)
-	if err != nil {
-		return hostport, "0"
-	}
-	return host, port
-}
-
-func parsePort(s string) (uint16, error) {
-	var n uint16
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, errors.New("invalid port")
-		}
-		n = n*10 + uint16(c-'0')
-	}
-	return n, nil
-}

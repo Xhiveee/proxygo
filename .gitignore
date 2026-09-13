@@ -18,14 +18,9 @@ vendor/
 *.db-shm
 *.log
 
-# Java
-proxygo-mc-agent/target/
-*.class
-
 # Local notes / docs
 ARCHITECTURE.md
 proxy.md
-proxygo-mc-agent/README.md
 
 # OS / editors
 .DS_Store
